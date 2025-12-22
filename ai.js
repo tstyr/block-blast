@@ -330,16 +330,20 @@ class AIAgent {
 class StatsGraph {
     constructor() {
         this.canvas = document.getElementById('graphCanvas');
+        if (!this.canvas) {
+            console.error('graphCanvas not found!');
+            return;
+        }
         this.ctx = this.canvas.getContext('2d');
         this.dpr = window.devicePixelRatio || 1;
-        this.resize();
         this.data = { scores: [], avgScores: [], maxScores: [], timestamps: [] };
         this.viewMode = 'recent';
-        this.setupUI();
+        this.resize();
         window.addEventListener('resize', () => this.resize());
     }
 
     resize() {
+        if (!this.canvas) return;
         const rect = this.canvas.getBoundingClientRect();
         this.canvas.width = rect.width * this.dpr;
         this.canvas.height = rect.height * this.dpr;
@@ -347,33 +351,6 @@ class StatsGraph {
         this.W = rect.width;
         this.H = rect.height;
         this.draw();
-    }
-
-    setupUI() {
-        document.getElementById('graphRecent').addEventListener('click', () => this.setView('recent'));
-        document.getElementById('graphAll').addEventListener('click', () => this.setView('all'));
-        document.getElementById('graphDaily').addEventListener('click', () => this.setView('daily'));
-        document.getElementById('graphReset').addEventListener('click', () => this.reset());
-    }
-
-    setView(mode) {
-        this.viewMode = mode;
-        document.querySelectorAll('.graph-btn:not(#graphReset)').forEach(b => b.classList.remove('active'));
-        document.getElementById('graph' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
-        this.draw();
-    }
-
-    reset() {
-        if (confirm('グラフデータをリセットしますか？')) {
-            this.data = { scores: [], avgScores: [], maxScores: [], timestamps: [] };
-            this.draw();
-            if (window.multiAI) {
-                multiAI.generation = 1;
-                multiAI.totalGames = 0;
-                multiAI.saveData();
-                multiAI.updateStats();
-            }
-        }
     }
 
     addScore(score, timestamp = Date.now()) {
@@ -387,6 +364,7 @@ class StatsGraph {
     }
 
     draw() {
+        if (!this.canvas || !this.ctx) return;
         const ctx = this.ctx;
         const W = this.W, H = this.H;
         
@@ -508,7 +486,14 @@ class StatsGraph {
 // マルチエージェント管理
 class MultiAgentAI {
     constructor() {
+        console.log('MultiAgentAI: Starting initialization...');
+        
         this.container = document.getElementById('gamesContainer');
+        if (!this.container) {
+            console.error('gamesContainer not found!');
+            return;
+        }
+        
         this.agents = [];
         this.games = [];
         this.agentCount = 6;
@@ -520,13 +505,43 @@ class MultiAgentAI {
         this.bestWeights = null;
         this.globalBestScore = 0;
         this.globalBestWeights = null;
-        this.graph = new StatsGraph();
+        
+        try {
+            this.graph = new StatsGraph();
+            console.log('MultiAgentAI: StatsGraph created');
+        } catch (e) {
+            console.error('StatsGraph error:', e);
+        }
 
-        this.loadData();
-        this.createAgents();
-        this.setupUI();
-        this.updateStats();
+        try {
+            this.loadData();
+            console.log('MultiAgentAI: Data loaded');
+        } catch (e) {
+            console.error('loadData error:', e);
+        }
+        
+        try {
+            this.createAgents();
+            console.log('MultiAgentAI: Agents created');
+        } catch (e) {
+            console.error('createAgents error:', e);
+        }
+        
+        try {
+            this.setupUI();
+            console.log('MultiAgentAI: UI setup complete');
+        } catch (e) {
+            console.error('setupUI error:', e);
+        }
+        
+        try {
+            this.updateStats();
+        } catch (e) {
+            console.error('updateStats error:', e);
+        }
+        
         cloudSync.init();
+        console.log('MultiAgentAI: Initialization complete!');
     }
 
     createAgents() {
@@ -549,14 +564,18 @@ class MultiAgentAI {
     }
 
     loadData() {
-        const saved = localStorage.getItem('blockBlastAI_v7');
-        if (saved) {
-            const data = JSON.parse(saved);
-            this.generation = data.generation || 1;
-            this.totalGames = data.totalGames || 0;
-            this.bestScore = data.bestScore || 0;
-            this.bestWeights = data.bestWeights || null;
-            if (data.graphData) this.graph.loadData(data.graphData);
+        try {
+            const saved = localStorage.getItem('blockBlastAI_v7');
+            if (saved) {
+                const data = JSON.parse(saved);
+                this.generation = data.generation || 1;
+                this.totalGames = data.totalGames || 0;
+                this.bestScore = data.bestScore || 0;
+                this.bestWeights = data.bestWeights || null;
+                if (data.graphData && this.graph) this.graph.loadData(data.graphData);
+            }
+        } catch (e) {
+            console.error('Error loading data:', e);
         }
     }
 
@@ -607,34 +626,98 @@ class MultiAgentAI {
     }
 
     setupUI() {
-        document.getElementById('toggleAI').addEventListener('click', () => {
-            this.isRunning = !this.isRunning;
-            document.getElementById('toggleAI').textContent = this.isRunning ? 'AI停止' : 'AI開始';
-            document.getElementById('toggleAI').classList.toggle('active', this.isRunning);
-            if (this.isRunning) this.run();
-        });
-
-        document.getElementById('aiSpeed').addEventListener('input', (e) => {
-            this.speed = parseInt(e.target.value);
-            document.getElementById('speedValue').textContent = this.speed + 'ms';
-        });
-
-        document.getElementById('agentCount').addEventListener('change', (e) => {
-            this.agentCount = parseInt(e.target.value);
-            this.createAgents();
-        });
-
-        document.getElementById('loginBtn').addEventListener('click', () => cloudSync.login());
+        const toggleBtn = document.getElementById('toggleAI');
+        const speedSlider = document.getElementById('aiSpeed');
+        const agentSelect = document.getElementById('agentCount');
+        const loginBtn = document.getElementById('loginBtn');
+        const useGlobalBtn = document.getElementById('useGlobalBest');
+        const graphRecent = document.getElementById('graphRecent');
+        const graphAll = document.getElementById('graphAll');
+        const graphDaily = document.getElementById('graphDaily');
+        const graphReset = document.getElementById('graphReset');
         
-        document.getElementById('useGlobalBest').addEventListener('click', () => {
-            if (this.globalBestWeights) {
-                this.bestWeights = { ...this.globalBestWeights };
+        if (toggleBtn) {
+            toggleBtn.addEventListener('click', () => {
+                console.log('Toggle AI clicked');
+                this.isRunning = !this.isRunning;
+                toggleBtn.textContent = this.isRunning ? 'AI停止' : 'AI開始';
+                toggleBtn.classList.toggle('active', this.isRunning);
+                if (this.isRunning) this.run();
+            });
+        } else {
+            console.error('toggleAI button not found!');
+        }
+
+        if (speedSlider) {
+            speedSlider.addEventListener('input', (e) => {
+                this.speed = parseInt(e.target.value);
+                document.getElementById('speedValue').textContent = this.speed + 'ms';
+            });
+        }
+
+        if (agentSelect) {
+            agentSelect.addEventListener('change', (e) => {
+                this.agentCount = parseInt(e.target.value);
                 this.createAgents();
-                alert('グローバルベストの学習データを適用しました！');
-            } else {
-                alert('グローバルベストがまだありません');
+            });
+        }
+
+        if (loginBtn) {
+            loginBtn.addEventListener('click', () => {
+                console.log('Login clicked');
+                cloudSync.login();
+            });
+        } else {
+            console.error('loginBtn not found!');
+        }
+        
+        if (useGlobalBtn) {
+            useGlobalBtn.addEventListener('click', () => {
+                if (this.globalBestWeights) {
+                    this.bestWeights = { ...this.globalBestWeights };
+                    this.createAgents();
+                    alert('グローバルベストの学習データを適用しました！');
+                } else {
+                    alert('グローバルベストがまだありません');
+                }
+            });
+        }
+        
+        // グラフボタン
+        if (graphRecent) {
+            graphRecent.addEventListener('click', () => this.setGraphView('recent'));
+        }
+        if (graphAll) {
+            graphAll.addEventListener('click', () => this.setGraphView('all'));
+        }
+        if (graphDaily) {
+            graphDaily.addEventListener('click', () => this.setGraphView('daily'));
+        }
+        if (graphReset) {
+            graphReset.addEventListener('click', () => this.resetGraph());
+        }
+    }
+    
+    setGraphView(mode) {
+        if (!this.graph) return;
+        this.graph.viewMode = mode;
+        document.querySelectorAll('.graph-btn:not(#graphReset)').forEach(b => b.classList.remove('active'));
+        const btn = document.getElementById('graph' + mode.charAt(0).toUpperCase() + mode.slice(1));
+        if (btn) btn.classList.add('active');
+        this.graph.draw();
+    }
+    
+    resetGraph() {
+        if (confirm('グラフデータをリセットしますか？')) {
+            if (this.graph) {
+                this.graph.data = { scores: [], avgScores: [], maxScores: [], timestamps: [] };
+                this.graph.draw();
             }
-        });
+            this.generation = 1;
+            this.totalGames = 0;
+            this.saveData();
+            this.updateStats();
+        }
     }
 
     updateStats() {
