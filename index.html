@@ -11,7 +11,7 @@
 </head>
 <body>
     <div class="container">
-        <h1>Block Blast</h1>
+        <h1>Block Blast AI</h1>
         
         <div class="cloud-sync">
             <button id="loginBtn">Googleログイン</button>
@@ -21,24 +21,27 @@
         <div class="global-stats">
             <span>世代: <span id="generation">1</span></span>
             <span>総ゲーム: <span id="totalGames">0</span></span>
-            <span>全体最高: <span id="bestScore">0</span></span>
+            <span>最高: <span id="bestScore">0</span></span>
             <span>平均: <span id="avgScore">0</span></span>
+            <span>成長: <span id="growth">-</span></span>
         </div>
 
         <div class="controls">
             <button id="toggleAI">AI開始</button>
             <div class="ai-info">
-                <label>速度: <input type="range" id="aiSpeed" min="10" max="500" value="100"></label>
-                <span id="speedValue">100ms</span>
+                <label>速度: <input type="range" id="aiSpeed" min="5" max="200" value="50"></label>
+                <span id="speedValue">50ms</span>
             </div>
             <div class="ai-info">
                 <label>AI数: 
                     <select id="agentCount">
-                        <option value="1">1</option>
                         <option value="2">2</option>
-                        <option value="3" selected>3</option>
-                        <option value="4">4</option>
+                        <option value="4" selected>4</option>
                         <option value="6">6</option>
+                        <option value="8">8</option>
+                        <option value="10">10</option>
+                        <option value="12">12</option>
+                        <option value="16">16</option>
                     </select>
                 </label>
             </div>
@@ -47,9 +50,8 @@
         <div id="gamesContainer" class="games-container"></div>
 
         <div class="instructions">
-            <h3>遊び方</h3>
-            <p>複数のAIが同時にプレイして学習。高スコアのAIの戦略が次世代に引き継がれます。</p>
-            <p>手動プレイ：ブロックをドラッグしてボードに配置。</p>
+            <p>各AIが独立してプレイ。ゲームオーバーになったら即リスタート。</p>
+            <p>高スコアのAIの戦略が次世代に引き継がれ、成長していきます。</p>
         </div>
     </div>
 

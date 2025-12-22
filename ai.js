@@ -12,7 +12,6 @@ class CloudSync {
         this.db = null;
         this.initialized = false;
     }
-
     async init() {
         if (typeof firebase === 'undefined') return false;
         try {
@@ -27,7 +26,6 @@ class CloudSync {
             return true;
         } catch (e) { return false; }
     }
-
     updateUI() {
         const btn = document.getElementById('loginBtn');
         const status = document.getElementById('loginStatus');
@@ -41,62 +39,57 @@ class CloudSync {
             status.style.color = '#aaa';
         }
     }
-
     async login() {
         if (!this.initialized) return;
-        if (this.user) {
-            await firebase.auth().signOut();
-        } else {
-            const provider = new firebase.auth.GoogleAuthProvider();
-            await firebase.auth().signInWithPopup(provider);
-        }
+        if (this.user) await firebase.auth().signOut();
+        else await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
     }
-
     async save(data) {
         if (!this.user || !this.db) return;
         await this.db.ref(`users/${this.user.uid}/aiData`).set(data);
     }
-
     async load() {
         if (!this.user || !this.db) return null;
         const snapshot = await this.db.ref(`users/${this.user.uid}/aiData`).once('value');
         return snapshot.val();
     }
 }
-
 const cloudSync = new CloudSync();
 
-// AIエージェント
 class AIAgent {
     constructor(id, game) {
         this.id = id;
         this.game = game;
         this.weights = this.randomWeights();
-        this.totalReward = 0;
+        this.gamesPlayed = 0;
+        this.totalScore = 0;
+        this.bestScore = 0;
     }
 
     randomWeights() {
         return {
             linesCleared: 50 + Math.random() * 100,
             emptySpaces: Math.random() * 3,
-            almostComplete: 5 + Math.random() * 10,
-            holes: -1 - Math.random() * 5,
+            almostComplete: 5 + Math.random() * 15,
+            holes: -2 - Math.random() * 6,
             edgeBonus: Math.random() * 2,
-            bigPieceFirst: Math.random() * 3
+            bigPieceFirst: Math.random() * 4,
+            connectivity: Math.random() * 2
         };
     }
 
-    clone() {
-        const agent = new AIAgent(this.id, this.game);
-        agent.weights = { ...this.weights };
-        agent.totalReward = this.totalReward;
-        return agent;
+    get avgScore() {
+        return this.gamesPlayed > 0 ? Math.round(this.totalScore / this.gamesPlayed) : 0;
     }
 
-    mutate(rate = 0.4, amount = 0.3) {
+    copyFrom(other) {
+        this.weights = { ...other.weights };
+    }
+
+    mutate(rate = 0.4, amount = 0.25) {
         for (const key in this.weights) {
             if (Math.random() < rate) {
-                this.weights[key] += (Math.random() - 0.5) * 2 * amount * Math.abs(this.weights[key] || 1);
+                this.weights[key] *= 1 + (Math.random() - 0.5) * amount * 2;
             }
         }
     }
@@ -112,17 +105,19 @@ class AIAgent {
         }
         score += this.weights.emptySpaces * empty;
 
-        // ほぼ完成ライン
+        // ほぼ完成ライン（重要！）
         for (let y = 0; y < BOARD_SIZE; y++) {
             let filled = board[y].filter(c => c !== 0).length;
-            if (filled >= 6) score += this.weights.almostComplete * (filled - 5);
+            if (filled === BOARD_SIZE) score += this.weights.linesCleared;
+            else if (filled >= 5) score += this.weights.almostComplete * (filled - 4);
         }
         for (let x = 0; x < BOARD_SIZE; x++) {
             let filled = 0;
             for (let y = 0; y < BOARD_SIZE; y++) {
                 if (board[y][x] !== 0) filled++;
             }
-            if (filled >= 6) score += this.weights.almostComplete * (filled - 5);
+            if (filled === BOARD_SIZE) score += this.weights.linesCleared;
+            else if (filled >= 5) score += this.weights.almostComplete * (filled - 4);
         }
 
         // 穴ペナルティ
@@ -139,10 +134,12 @@ class AIAgent {
             }
         }
 
-        // エッジボーナス
+        // エッジ・コーナーボーナス
         for (let i = 0; i < BOARD_SIZE; i++) {
             if (board[i][0] !== 0) score += this.weights.edgeBonus;
             if (board[i][BOARD_SIZE - 1] !== 0) score += this.weights.edgeBonus;
+            if (board[0][i] !== 0) score += this.weights.edgeBonus;
+            if (board[BOARD_SIZE - 1][i] !== 0) score += this.weights.edgeBonus;
         }
 
         return score;
@@ -159,12 +156,14 @@ class AIAgent {
         }
 
         let linesCleared = 0;
+        // 横
         for (let row = 0; row < BOARD_SIZE; row++) {
             if (newBoard[row].every(c => c !== 0)) {
                 for (let col = 0; col < BOARD_SIZE; col++) newBoard[row][col] = 0;
                 linesCleared++;
             }
         }
+        // 縦
         for (let col = 0; col < BOARD_SIZE; col++) {
             let full = true;
             for (let row = 0; row < BOARD_SIZE; row++) {
@@ -189,7 +188,7 @@ class AIAgent {
             const piece = this.game.pieces[move.pieceIndex];
             const result = this.simulateMove(this.game.board, piece, move.x, move.y);
 
-            let moveScore = result.linesCleared * this.weights.linesCleared;
+            let moveScore = result.linesCleared * this.weights.linesCleared * 2;
             moveScore += this.evaluateBoard(result.board);
             
             const blockSize = piece.shape.flat().filter(c => c).length;
@@ -212,22 +211,29 @@ class AIAgent {
         }
         return false;
     }
+
+    onGameOver() {
+        const score = this.game.score;
+        this.gamesPlayed++;
+        this.totalScore += score;
+        if (score > this.bestScore) this.bestScore = score;
+    }
 }
 
-// マルチエージェント管理
 class MultiAgentAI {
     constructor() {
         this.container = document.getElementById('gamesContainer');
         this.agents = [];
         this.games = [];
-        this.agentCount = 3;
+        this.agentCount = 4;
         this.isRunning = false;
-        this.speed = 100;
+        this.speed = 50;
         this.generation = 1;
         this.totalGames = 0;
         this.bestScore = 0;
         this.bestWeights = null;
-        this.recentScores = [];
+        this.allTimeScores = [];
+        this.generationScores = [];
 
         this.loadData();
         this.createAgents();
@@ -237,7 +243,6 @@ class MultiAgentAI {
     }
 
     createAgents() {
-        // 既存を削除
         this.games.forEach(g => g.destroy());
         this.games = [];
         this.agents = [];
@@ -247,24 +252,31 @@ class MultiAgentAI {
             this.games.push(game);
             
             const agent = new AIAgent(i, game);
-            // ベストの重みがあれば継承
-            if (this.bestWeights) {
-                agent.weights = { ...this.bestWeights };
+            if (this.bestWeights && Math.random() < 0.7) {
+                agent.copyFrom({ weights: this.bestWeights });
                 agent.mutate(0.5, 0.3);
             }
             this.agents.push(agent);
         }
+        this.updateAgentLabels();
+    }
+
+    updateAgentLabels() {
+        this.agents.forEach((agent, i) => {
+            const label = this.games[i].element.querySelector('.agent-name');
+            label.textContent = `AI ${i + 1}`;
+        });
     }
 
     loadData() {
-        const saved = localStorage.getItem('blockBlastMultiAI3');
+        const saved = localStorage.getItem('blockBlastAI_v4');
         if (saved) {
             const data = JSON.parse(saved);
             this.generation = data.generation || 1;
             this.totalGames = data.totalGames || 0;
             this.bestScore = data.bestScore || 0;
             this.bestWeights = data.bestWeights || null;
-            this.recentScores = data.recentScores || [];
+            this.allTimeScores = data.allTimeScores || [];
         }
     }
 
@@ -274,28 +286,21 @@ class MultiAgentAI {
             totalGames: this.totalGames,
             bestScore: this.bestScore,
             bestWeights: this.bestWeights,
-            recentScores: this.recentScores.slice(-100)
+            allTimeScores: this.allTimeScores.slice(-500)
         };
-        localStorage.setItem('blockBlastMultiAI3', JSON.stringify(data));
+        localStorage.setItem('blockBlastAI_v4', JSON.stringify(data));
         if (cloudSync.user) cloudSync.save(data);
     }
 
     async loadFromCloud() {
         const data = await cloudSync.load();
-        if (data && data.generation > this.generation) {
-            this.generation = data.generation;
-            this.totalGames = data.totalGames;
+        if (data && data.bestScore > this.bestScore) {
+            this.generation = Math.max(this.generation, data.generation || 1);
+            this.totalGames = Math.max(this.totalGames, data.totalGames || 0);
             this.bestScore = data.bestScore;
             this.bestWeights = data.bestWeights;
-            this.recentScores = data.recentScores || [];
             this.updateStats();
-            // エージェントに反映
-            this.agents.forEach(a => {
-                if (this.bestWeights) {
-                    a.weights = { ...this.bestWeights };
-                    a.mutate(0.3, 0.2);
-                }
-            });
+            console.log('☁️ Synced better weights from cloud!');
         }
     }
 
@@ -325,93 +330,105 @@ class MultiAgentAI {
         document.getElementById('totalGames').textContent = this.totalGames;
         document.getElementById('bestScore').textContent = this.bestScore;
         
-        const avg = this.recentScores.length > 0
-            ? Math.round(this.recentScores.reduce((a, b) => a + b, 0) / this.recentScores.length)
-            : 0;
+        const recent = this.allTimeScores.slice(-50);
+        const avg = recent.length > 0 ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length) : 0;
         document.getElementById('avgScore').textContent = avg;
+
+        // 成長率表示
+        const older = this.allTimeScores.slice(-100, -50);
+        if (older.length > 0 && recent.length > 0) {
+            const oldAvg = older.reduce((a, b) => a + b, 0) / older.length;
+            const newAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
+            const growth = ((newAvg - oldAvg) / oldAvg * 100).toFixed(1);
+            document.getElementById('growth').textContent = (growth >= 0 ? '+' : '') + growth + '%';
+            document.getElementById('growth').style.color = growth >= 0 ? '#1dd1a1' : '#ff6b6b';
+        }
     }
 
-    evolve() {
-        // 全エージェントのスコアを収集
-        const scores = this.agents.map((a, i) => ({
-            agent: a,
-            score: this.games[i].score
-        }));
+    onAgentGameOver(agentIndex) {
+        const agent = this.agents[agentIndex];
+        const score = this.games[agentIndex].score;
+        
+        agent.onGameOver();
+        this.totalGames++;
+        this.allTimeScores.push(score);
+        this.generationScores.push({ agent: agentIndex, score });
 
-        // スコア記録
-        scores.forEach(s => {
-            this.recentScores.push(s.score);
-            this.totalGames++;
-            
-            // 報酬計算（高スコアほど指数的に増加）
-            const reward = Math.pow(s.score / 50, 1.5);
-            s.agent.totalReward += reward;
-
-            // ベスト更新
-            if (s.score > this.bestScore) {
-                this.bestScore = s.score;
-                this.bestWeights = { ...s.agent.weights };
-                console.log(`🏆 New best: ${s.score} by AI ${s.agent.id + 1}`);
-            }
-        });
-
-        if (this.recentScores.length > 100) {
-            this.recentScores = this.recentScores.slice(-100);
+        // ベスト更新
+        if (score > this.bestScore) {
+            this.bestScore = score;
+            this.bestWeights = { ...agent.weights };
+            console.log(`🏆 New best: ${score} by AI ${agentIndex + 1}`);
+            this.showBestNotification(agentIndex, score);
         }
 
-        // 報酬でソート
-        scores.sort((a, b) => b.agent.totalReward - a.agent.totalReward);
+        // 世代交代チェック（全員が一定回数プレイしたら）
+        const minGames = Math.min(...this.agents.map(a => a.gamesPlayed));
+        if (minGames > 0 && minGames % 3 === 0 && this.generationScores.length >= this.agentCount * 3) {
+            this.evolveGeneration();
+        }
 
-        // 上位半分の遺伝子を下位に継承
+        // 即座にリスタート
+        this.games[agentIndex].init();
+        
+        // 定期保存
+        if (this.totalGames % 10 === 0) {
+            this.saveData();
+            this.updateStats();
+        }
+    }
+
+    showBestNotification(agentIndex, score) {
+        const el = this.games[agentIndex].element;
+        el.style.boxShadow = '0 0 20px #feca57';
+        setTimeout(() => el.style.boxShadow = '', 1000);
+    }
+
+    evolveGeneration() {
+        // 平均スコアでソート
+        const ranked = this.agents
+            .map((a, i) => ({ agent: a, index: i, avg: a.avgScore }))
+            .sort((a, b) => b.avg - a.avg);
+
+        console.log(`📊 Gen ${this.generation} - Avg scores:`, ranked.map(r => r.avg));
+
+        // 下位半分を上位の変異コピーで置き換え
         const survivors = Math.ceil(this.agents.length / 2);
         for (let i = survivors; i < this.agents.length; i++) {
-            const parent = scores[i % survivors].agent;
-            this.agents[i].weights = { ...parent.weights };
-            this.agents[i].mutate(0.5, 0.3);
-            this.agents[i].totalReward = 0;
+            const parent = ranked[i % survivors].agent;
+            this.agents[ranked[i].index].copyFrom(parent);
+            this.agents[ranked[i].index].mutate(0.5, 0.35);
+            // 統計リセット
+            this.agents[ranked[i].index].gamesPlayed = 0;
+            this.agents[ranked[i].index].totalScore = 0;
         }
 
-        // ベストの遺伝子も混ぜる
+        // ベストの遺伝子を少し混ぜる
         if (this.bestWeights) {
             this.agents.forEach(a => {
                 for (const key in a.weights) {
-                    if (Math.random() < 0.15) {
-                        a.weights[key] = this.bestWeights[key];
+                    if (Math.random() < 0.1) {
+                        a.weights[key] = this.bestWeights[key] * (0.9 + Math.random() * 0.2);
                     }
                 }
             });
         }
 
-        // 上位の報酬を減衰
-        for (let i = 0; i < survivors; i++) {
-            scores[i].agent.totalReward *= 0.5;
-        }
-
         this.generation++;
+        this.generationScores = [];
         this.saveData();
         this.updateStats();
-
-        // ゲームリセット
-        this.games.forEach(g => g.init());
     }
 
     async run() {
         while (this.isRunning) {
-            // 全エージェントが1手ずつ
-            let allDone = true;
             for (let i = 0; i < this.agents.length; i++) {
-                if (!this.games[i].gameOver) {
+                if (this.games[i].gameOver) {
+                    this.onAgentGameOver(i);
+                } else {
                     this.agents[i].step();
-                    allDone = false;
                 }
             }
-
-            // 全員ゲームオーバーなら進化
-            if (allDone) {
-                this.evolve();
-                await this.sleep(300);
-            }
-
             await this.sleep(this.speed);
         }
     }
