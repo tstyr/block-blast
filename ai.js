@@ -729,4 +729,6 @@ class MultiAgentAI {
     }
 }
 
-const multiAI = new MultiAgentAI();
+document.addEventListener('DOMContentLoaded', () => {
+    window.multiAI = new MultiAgentAI();
+});
