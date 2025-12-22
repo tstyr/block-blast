@@ -1,9 +1,12 @@
 // Firebase設定
 const FIREBASE_CONFIG = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT.firebaseapp.com",
-    projectId: "YOUR_PROJECT",
-    databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com"
+    apiKey: "AIzaSyCRWWrJyQm6x9b8DkgA9jkQWgLxRENotAg",
+    authDomain: "block-blast-653e1.firebaseapp.com",
+    projectId: "block-blast-653e1",
+    databaseURL: "https://block-blast-653e1-default-rtdb.asia-southeast1.firebasedatabase.app",
+    storageBucket: "block-blast-653e1.firebasestorage.app",
+    messagingSenderId: "561520195184",
+    appId: "1:561520195184:web:82d6d93c22e00f691e26b5"
 };
 
 class CloudSync {
