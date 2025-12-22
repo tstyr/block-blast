@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Block Blast - マルチAI学習版</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Block Blast</h1>
+        
+        <div class="cloud-sync">
+            <button id="loginBtn">Googleログイン</button>
+            <span id="loginStatus">未ログイン</span>
+        </div>
+
+        <div class="game-info">
+            <div class="score">スコア: <span id="score">0</span></div>
+            <div class="high-score">ハイスコア: <span id="highScore">0</span></div>
+        </div>
+        
+        <div class="controls">
+            <button id="newGame">新規ゲーム</button>
+            <button id="toggleAI">AI開始</button>
+            <div class="ai-info">
+                <label>速度: <input type="range" id="aiSpeed" min="5" max="300" value="50"></label>
+                <span id="speedValue">50ms</span>
+            </div>
+            <div class="ai-info">
+                <label>エージェント数: 
+                    <select id="agentCount">
+                        <option value="3">3</option>
+                        <option value="5" selected>5</option>
+                        <option value="8">8</option>
+                        <option value="10">10</option>
+                    </select>
+                </label>
+            </div>
+        </div>
+
+        <div class="ai-stats">
+            <span>世代: <span id="generation">1</span></span>
+            <span>総ゲーム: <span id="trainCount">0</span></span>
+            <span>平均: <span id="avgScore">0</span></span>
+            <span>最高: <span id="bestScoreAI">0</span></span>
+            <span>現在: <span id="currentAgent">-</span></span>
+        </div>
+
+        <div class="game-area">
+            <canvas id="gameBoard" width="320" height="320"></canvas>
+            <div class="pieces-area">
+                <h3>配置するブロック</h3>
+                <div id="piecesContainer"></div>
+            </div>
+        </div>
+
+        <div class="instructions">
+            <h3>遊び方</h3>
+            <p>ブロックをドラッグしてボードに配置。</p>
+            <p>AIは複数エージェントが競争学習。高スコアほど報酬UP！</p>
+            <p>Googleログインでデータをクラウド同期できます。</p>
+        </div>
+    </div>
+
+    <script src="game.js"></script>
+    <script src="ai.js"></script>
+</body>
+</html>

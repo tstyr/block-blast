@@ -1,0 +1,197 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+    min-height: 100vh;
+    color: #fff;
+}
+
+.container {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 20px;
+}
+
+h1 {
+    text-align: center;
+    font-size: 2.5rem;
+    margin-bottom: 20px;
+    background: linear-gradient(45deg, #ff6b6b, #feca57, #48dbfb);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.cloud-sync {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 15px;
+}
+
+#loginBtn {
+    background: linear-gradient(45deg, #4285f4, #34a853);
+    color: white;
+    padding: 8px 16px;
+    font-size: 0.9rem;
+}
+
+#loginStatus {
+    font-size: 0.85rem;
+    color: #aaa;
+}
+
+.game-info {
+    display: flex;
+    justify-content: center;
+    gap: 40px;
+    margin-bottom: 20px;
+    font-size: 1.2rem;
+}
+
+.score, .high-score {
+    background: rgba(255,255,255,0.1);
+    padding: 10px 20px;
+    border-radius: 10px;
+}
+
+.controls {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+button {
+    padding: 12px 24px;
+    font-size: 1rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.3s;
+}
+
+#newGame {
+    background: linear-gradient(45deg, #667eea, #764ba2);
+    color: white;
+}
+
+#toggleAI {
+    background: linear-gradient(45deg, #11998e, #38ef7d);
+    color: white;
+}
+
+#toggleAI.active {
+    background: linear-gradient(45deg, #eb3349, #f45c43);
+}
+
+button:hover {
+    transform: scale(1.05);
+    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+}
+
+.ai-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.ai-info input[type="range"] {
+    width: 100px;
+}
+
+.ai-info select {
+    background: #1a1a3e;
+    color: white;
+    border: 1px solid #333;
+    padding: 5px 10px;
+    border-radius: 5px;
+}
+
+.ai-stats {
+    display: flex;
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 15px;
+    font-size: 0.9rem;
+    color: #aaa;
+    margin-bottom: 20px;
+    background: rgba(255,255,255,0.05);
+    padding: 10px 20px;
+    border-radius: 8px;
+}
+
+.game-area {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 30px;
+    margin-bottom: 20px;
+}
+
+#gameBoard {
+    width: 320px;
+    height: 320px;
+    background: #0f0f23;
+    border-radius: 10px;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+.pieces-area {
+    text-align: center;
+}
+
+.pieces-area h3 {
+    margin-bottom: 15px;
+    color: #aaa;
+}
+
+#piecesContainer {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.piece-canvas {
+    width: 120px;
+    height: 120px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: box-shadow 0.2s, background 0.2s;
+}
+
+.piece-canvas:hover {
+    background: rgba(255,255,255,0.1);
+}
+
+.piece-canvas.selected {
+    box-shadow: 0 0 15px #48dbfb;
+    background: rgba(72, 219, 251, 0.2);
+}
+
+.instructions {
+    background: rgba(255,255,255,0.05);
+    padding: 20px;
+    border-radius: 10px;
+    text-align: center;
+}
+
+.instructions h3 {
+    margin-bottom: 10px;
+    color: #feca57;
+}
+
+.instructions p {
+    margin: 5px 0;
+    color: #aaa;
+    font-size: 0.9rem;
+}
