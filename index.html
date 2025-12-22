@@ -20,9 +20,10 @@
             </div>
             <div class="controls">
                 <button id="toggleAI">AI開始</button>
-                <label>速度: <input type="range" id="aiSpeed" min="1" max="200" value="30"><span id="speedValue">30ms</span></label>
+                <label>速度: <input type="range" id="aiSpeed" min="1" max="100" value="20"><span id="speedValue">20ms</span></label>
                 <label>AI数: 
                     <select id="agentCount">
+                        <option value="1">1</option>
                         <option value="2">2</option>
                         <option value="4">4</option>
                         <option value="6" selected>6</option>
@@ -30,9 +31,12 @@
                         <option value="12">12</option>
                         <option value="16">16</option>
                         <option value="20">20</option>
-                        <option value="25">25</option>
                         <option value="30">30</option>
                         <option value="50">50</option>
+                        <option value="75">75</option>
+                        <option value="100">100</option>
+                        <option value="150">150</option>
+                        <option value="200">200</option>
                     </select>
                 </label>
             </div>
@@ -48,14 +52,14 @@
 
         <div class="graph-section">
             <div class="graph-header">
-                <span>スコア推移</span>
+                <span>📈 スコア推移</span>
                 <div class="graph-buttons">
-                    <button id="graphRecent" class="graph-btn active">直近100</button>
+                    <button id="graphRecent" class="graph-btn active">直近150</button>
                     <button id="graphAll" class="graph-btn">全期間</button>
                     <button id="graphDaily" class="graph-btn">日別</button>
                 </div>
             </div>
-            <canvas id="graphCanvas" width="700" height="180"></canvas>
+            <canvas id="graphCanvas"></canvas>
         </div>
 
         <div id="gamesContainer" class="games-container"></div>
