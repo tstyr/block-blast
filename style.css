@@ -139,6 +139,36 @@ h1 {
     color: #000;
 }
 
+.graph-btn.reset {
+    background: rgba(255,100,100,0.3);
+    color: #ff6b6b;
+}
+
+.global-best-info {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.85rem;
+    color: #aaa;
+    background: rgba(255,255,255,0.05);
+    padding: 6px 12px;
+    border-radius: 6px;
+}
+
+.global-best-info b {
+    color: #48dbfb;
+}
+
+.small-btn {
+    background: #48dbfb;
+    color: #000;
+    border: none;
+    padding: 3px 8px;
+    font-size: 0.7rem;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
 #graphCanvas {
     width: 100%;
     height: 200px;

@@ -8,6 +8,7 @@ const FIREBASE_CONFIG = {
 
 class CloudSync {
     constructor() { this.user = null; this.db = null; this.initialized = false; }
+    
     async init() {
         if (typeof firebase === 'undefined') return false;
         try {
@@ -19,25 +20,70 @@ class CloudSync {
                 document.getElementById('loginBtn').textContent = user ? 'ログアウト' : 'Googleログイン';
                 document.getElementById('loginStatus').textContent = user ? (user.email || 'ログイン中') : '未ログイン';
                 document.getElementById('loginStatus').style.color = user ? '#1dd1a1' : '#aaa';
-                if (user && window.multiAI) multiAI.loadFromCloud();
+                if (user && window.multiAI) {
+                    multiAI.loadFromCloud();
+                    multiAI.loadGlobalBest();
+                }
             });
+            // 定期的にグローバルベストをチェック
+            setInterval(() => { if (window.multiAI) multiAI.loadGlobalBest(); }, 30000);
             return true;
-        } catch (e) { return false; }
+        } catch (e) { console.error(e); return false; }
     }
+    
     async login() {
         if (!this.initialized) return;
         if (this.user) await firebase.auth().signOut();
         else await firebase.auth().signInWithPopup(new firebase.auth.GoogleAuthProvider());
     }
-    async save(data) { if (this.user && this.db) await this.db.ref(`users/${this.user.uid}/aiData`).set(data); }
+    
+    // 自分のデータ保存
+    async save(data) {
+        if (!this.user || !this.db) return;
+        await this.db.ref(`users/${this.user.uid}/aiData`).set(data);
+        // グローバルベストも更新
+        if (data.bestScore && data.bestWeights) {
+            await this.updateGlobalBest(data.bestScore, data.bestWeights);
+        }
+    }
+    
+    // 自分のデータ読み込み
     async load() {
         if (!this.user || !this.db) return null;
         return (await this.db.ref(`users/${this.user.uid}/aiData`).once('value')).val();
     }
+    
+    // グローバルベスト更新
+    async updateGlobalBest(score, weights) {
+        if (!this.db) return;
+        try {
+            const current = await this.db.ref('globalBest').once('value');
+            const data = current.val();
+            if (!data || score > data.score) {
+                await this.db.ref('globalBest').set({
+                    score,
+                    weights,
+                    userId: this.user?.uid || 'anonymous',
+                    userName: this.user?.email?.split('@')[0] || 'anonymous',
+                    updatedAt: Date.now()
+                });
+                console.log('🌍 Updated global best!');
+            }
+        } catch (e) { console.error(e); }
+    }
+    
+    // グローバルベスト取得
+    async getGlobalBest() {
+        if (!this.db) return null;
+        try {
+            const snapshot = await this.db.ref('globalBest').once('value');
+            return snapshot.val();
+        } catch (e) { console.error(e); return null; }
+    }
 }
 const cloudSync = new CloudSync();
 
-// 強化学習AIエージェント - 2手先読み
+// 強化学習AIエージェント
 class AIAgent {
     constructor(id, game) {
         this.id = id;
@@ -50,27 +96,47 @@ class AIAgent {
 
     randomWeights() {
         return {
-            linesClear: 200 + Math.random() * 100,
-            multiLine: 100 + Math.random() * 50,      // 複数ライン同時消しボーナス
-            almostLine7: 40 + Math.random() * 20,     // あと1マス
-            almostLine6: 20 + Math.random() * 10,     // あと2マス
-            almostLine5: 8 + Math.random() * 4,       // あと3マス
-            emptyBonus: 1.5 + Math.random() * 0.5,
-            holePenalty: -25 - Math.random() * 15,
-            hole4Penalty: -80 - Math.random() * 40,   // 完全に囲まれた穴
-            edgeBonus: 3 + Math.random() * 2,
-            cornerBonus: 6 + Math.random() * 4,
-            bigPiece: 2 + Math.random() * 1,
-            futureBonus: 0.5 + Math.random() * 0.3,
-            rowColBalance: 5 + Math.random() * 3,     // 行列バランス
-            centerPenalty: -1 - Math.random() * 0.5   // 中央配置ペナルティ
+            linesClear: 250,
+            multiLine: 150,
+            almostLine7: 50,
+            almostLine6: 25,
+            almostLine5: 10,
+            emptyBonus: 1.8,
+            holePenalty: -35,
+            hole4Penalty: -120,
+            edgeBonus: 4,
+            cornerBonus: 8,
+            bigPiece: 2.5,
+            futureBonus: 0.6,
+            rowColBalance: 6,
+            centerPenalty: -1.5
+        };
+    }
+
+    // 最適化された初期値（学習済み）
+    static getOptimizedWeights() {
+        return {
+            linesClear: 280,
+            multiLine: 180,
+            almostLine7: 60,
+            almostLine6: 30,
+            almostLine5: 12,
+            emptyBonus: 2.0,
+            holePenalty: -40,
+            hole4Penalty: -150,
+            edgeBonus: 5,
+            cornerBonus: 10,
+            bigPiece: 3,
+            futureBonus: 0.8,
+            rowColBalance: 7,
+            centerPenalty: -2
         };
     }
 
     get avgScore() { return this.gamesPlayed > 0 ? Math.round(this.totalScore / this.gamesPlayed) : 0; }
     copyFrom(w) { this.weights = { ...w }; }
     
-    mutate(rate = 0.35, amount = 0.2) {
+    mutate(rate = 0.3, amount = 0.15) {
         for (const k in this.weights) {
             if (Math.random() < rate) {
                 this.weights[k] *= (1 + (Math.random() - 0.5) * amount * 2);
@@ -121,12 +187,10 @@ class AIAgent {
         let score = 0;
         const S = BOARD_SIZE;
 
-        // 空きマス
         let empty = 0;
         for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (board[y][x] === 0) empty++;
         score += this.weights.emptyBonus * empty;
 
-        // 行・列の充填度
         let rowFills = [], colFills = [];
         for (let y = 0; y < S; y++) {
             const filled = board[y].filter(c => c !== 0).length;
@@ -144,14 +208,12 @@ class AIAgent {
             else if (filled === S - 3) score += this.weights.almostLine5;
         }
 
-        // 行列バランス（均等に埋める）
         const rowAvg = rowFills.reduce((a, b) => a + b, 0) / S;
         const colAvg = colFills.reduce((a, b) => a + b, 0) / S;
         const rowVar = rowFills.reduce((a, b) => a + Math.abs(b - rowAvg), 0) / S;
         const colVar = colFills.reduce((a, b) => a + Math.abs(b - colAvg), 0) / S;
         score -= (rowVar + colVar) * this.weights.rowColBalance * 0.1;
 
-        // 穴ペナルティ
         for (let y = 0; y < S; y++) {
             for (let x = 0; x < S; x++) {
                 if (board[y][x] === 0) {
@@ -166,7 +228,6 @@ class AIAgent {
             }
         }
 
-        // 端・角ボーナス
         for (let i = 0; i < S; i++) {
             if (board[i][0] !== 0) score += this.weights.edgeBonus;
             if (board[i][S-1] !== 0) score += this.weights.edgeBonus;
@@ -178,7 +239,6 @@ class AIAgent {
         if (board[S-1][0] !== 0) score += this.weights.cornerBonus;
         if (board[S-1][S-1] !== 0) score += this.weights.cornerBonus;
 
-        // 中央ペナルティ（端から埋める戦略）
         const center = Math.floor(S / 2);
         for (let y = center - 1; y <= center; y++) {
             for (let x = center - 1; x <= center; x++) {
@@ -202,7 +262,6 @@ class AIAgent {
         return count;
     }
 
-    // 2手先読み
     findBestMove() {
         const validMoves = this.game.getValidMoves();
         if (validMoves.length === 0) return null;
@@ -214,18 +273,16 @@ class AIAgent {
             const piece = pieces[m.pieceIndex];
             const result = this.simulate(this.game.board, piece, m.x, m.y);
             
-            // 1手目の評価
             let moveScore = result.lines * this.weights.linesClear;
             if (result.lines >= 2) moveScore += result.lines * this.weights.multiLine;
             moveScore += this.evaluateBoard(result.board);
             moveScore += piece.shape.flat().filter(c => c).length * this.weights.bigPiece;
 
-            // 残りピースでの配置可能数
             const remaining = pieces.map((p, i) => i === m.pieceIndex ? { ...p, used: true } : p);
             const futureMoves = this.countValidMoves(result.board, remaining);
             moveScore += futureMoves * this.weights.futureBonus;
 
-            // 2手目先読み（残りピースで最良の手を探す）
+            // 2手先読み
             let bestSecond = 0;
             for (let i = 0; i < pieces.length; i++) {
                 if (i === m.pieceIndex || pieces[i].used) continue;
@@ -296,13 +353,27 @@ class StatsGraph {
         document.getElementById('graphRecent').addEventListener('click', () => this.setView('recent'));
         document.getElementById('graphAll').addEventListener('click', () => this.setView('all'));
         document.getElementById('graphDaily').addEventListener('click', () => this.setView('daily'));
+        document.getElementById('graphReset').addEventListener('click', () => this.reset());
     }
 
     setView(mode) {
         this.viewMode = mode;
-        document.querySelectorAll('.graph-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.graph-btn:not(#graphReset)').forEach(b => b.classList.remove('active'));
         document.getElementById('graph' + mode.charAt(0).toUpperCase() + mode.slice(1)).classList.add('active');
         this.draw();
+    }
+
+    reset() {
+        if (confirm('グラフデータをリセットしますか？')) {
+            this.data = { scores: [], avgScores: [], maxScores: [], timestamps: [] };
+            this.draw();
+            if (window.multiAI) {
+                multiAI.generation = 1;
+                multiAI.totalGames = 0;
+                multiAI.saveData();
+                multiAI.updateStats();
+            }
+        }
     }
 
     addScore(score, timestamp = Date.now()) {
@@ -319,7 +390,6 @@ class StatsGraph {
         const ctx = this.ctx;
         const W = this.W, H = this.H;
         
-        // 背景
         ctx.fillStyle = '#0a0a1a';
         ctx.fillRect(0, 0, W, H);
 
@@ -348,11 +418,10 @@ class StatsGraph {
 
         const allVals = [...scores, ...avgScores, ...maxScores];
         const maxVal = Math.max(...allVals, 100) * 1.1;
-        const pad = { top: 25, right: 15, bottom: 25, left: 45 };
+        const pad = { top: 25, right: 15, bottom: 25, left: 50 };
         const gW = W - pad.left - pad.right;
         const gH = H - pad.top - pad.bottom;
 
-        // グリッド
         ctx.strokeStyle = '#1a1a3e';
         ctx.lineWidth = 1;
         for (let i = 0; i <= 4; i++) {
@@ -389,7 +458,6 @@ class StatsGraph {
         drawLine(avgScores, '#feca57', 2.5);
         drawLine(maxScores, '#ff6b6b', 2.5);
 
-        // 凡例
         ctx.font = '12px sans-serif';
         ctx.textAlign = 'left';
         ctx.fillStyle = '#ff6b6b';
@@ -399,15 +467,13 @@ class StatsGraph {
         ctx.fillRect(W - 65, 8, 12, 12);
         ctx.fillText('平均', W - 50, 18);
 
-        // 現在値
         if (avgScores.length > 0) {
             ctx.fillStyle = '#fff';
             ctx.font = 'bold 13px sans-serif';
             ctx.textAlign = 'right';
-            ctx.fillText(`現在平均: ${avgScores[avgScores.length - 1]}`, W - 15, H - 5);
+            ctx.fillText(`平均: ${avgScores[avgScores.length - 1]} / 最高: ${maxScores[maxScores.length - 1]}`, W - 15, H - 5);
         }
 
-        // 日別ラベル
         if (labels && labels.length > 0) {
             ctx.fillStyle = '#666';
             ctx.font = '10px sans-serif';
@@ -452,6 +518,8 @@ class MultiAgentAI {
         this.totalGames = 0;
         this.bestScore = 0;
         this.bestWeights = null;
+        this.globalBestScore = 0;
+        this.globalBestWeights = null;
         this.graph = new StatsGraph();
 
         this.loadData();
@@ -466,21 +534,22 @@ class MultiAgentAI {
         this.games = [];
         this.agents = [];
 
+        // 使用する重み（グローバルベスト > 自分のベスト > 最適化済み初期値）
+        const baseWeights = this.globalBestWeights || this.bestWeights || AIAgent.getOptimizedWeights();
+
         for (let i = 0; i < this.agentCount; i++) {
             const game = new BlockBlastGame(this.container, i, false);
             this.games.push(game);
             
             const agent = new AIAgent(i, game);
-            if (this.bestWeights) {
-                agent.copyFrom(this.bestWeights);
-                if (i > 0) agent.mutate(0.4, 0.25); // 最初の1体はベストそのまま
-            }
+            agent.copyFrom(baseWeights);
+            if (i > 0) agent.mutate(0.35, 0.2);
             this.agents.push(agent);
         }
     }
 
     loadData() {
-        const saved = localStorage.getItem('blockBlastAI_v6');
+        const saved = localStorage.getItem('blockBlastAI_v7');
         if (saved) {
             const data = JSON.parse(saved);
             this.generation = data.generation || 1;
@@ -499,16 +568,41 @@ class MultiAgentAI {
             bestWeights: this.bestWeights,
             graphData: this.graph.getData()
         };
-        localStorage.setItem('blockBlastAI_v6', JSON.stringify(data));
+        localStorage.setItem('blockBlastAI_v7', JSON.stringify(data));
         if (cloudSync.user) cloudSync.save(data);
     }
 
     async loadFromCloud() {
         const data = await cloudSync.load();
         if (data && data.bestScore > this.bestScore) {
-            Object.assign(this, { generation: data.generation, totalGames: data.totalGames, bestScore: data.bestScore, bestWeights: data.bestWeights });
+            this.generation = Math.max(this.generation, data.generation || 1);
+            this.totalGames = Math.max(this.totalGames, data.totalGames || 0);
+            this.bestScore = data.bestScore;
+            this.bestWeights = data.bestWeights;
             if (data.graphData) this.graph.loadData(data.graphData);
             this.updateStats();
+            console.log('☁️ Loaded personal best from cloud');
+        }
+    }
+
+    async loadGlobalBest() {
+        const global = await cloudSync.getGlobalBest();
+        if (global && global.score > this.globalBestScore) {
+            this.globalBestScore = global.score;
+            this.globalBestWeights = global.weights;
+            document.getElementById('globalBest').textContent = global.score;
+            document.getElementById('globalBestUser').textContent = global.userName || '?';
+            console.log(`🌍 Global best: ${global.score} by ${global.userName}`);
+            
+            // グローバルベストが自分より良ければ、エージェントに反映
+            if (global.score > this.bestScore) {
+                this.agents.forEach((a, i) => {
+                    if (i === 0 || Math.random() < 0.3) {
+                        a.copyFrom(global.weights);
+                        if (i > 0) a.mutate(0.3, 0.15);
+                    }
+                });
+            }
         }
     }
 
@@ -531,6 +625,16 @@ class MultiAgentAI {
         });
 
         document.getElementById('loginBtn').addEventListener('click', () => cloudSync.login());
+        
+        document.getElementById('useGlobalBest').addEventListener('click', () => {
+            if (this.globalBestWeights) {
+                this.bestWeights = { ...this.globalBestWeights };
+                this.createAgents();
+                alert('グローバルベストの学習データを適用しました！');
+            } else {
+                alert('グローバルベストがまだありません');
+            }
+        });
     }
 
     updateStats() {
@@ -564,12 +668,11 @@ class MultiAgentAI {
         if (score > this.bestScore) {
             this.bestScore = score;
             this.bestWeights = { ...agent.weights };
-            console.log(`🏆 New best: ${score} by AI ${idx + 1}`, agent.weights);
+            console.log(`🏆 New personal best: ${score}`);
             this.games[idx].element.style.boxShadow = '0 0 30px #feca57';
             setTimeout(() => this.games[idx].element.style.boxShadow = '', 2000);
         }
 
-        // 進化
         const minGames = Math.min(...this.agents.map(a => a.gamesPlayed));
         if (minGames > 0 && minGames % 3 === 0) this.evolve();
 
@@ -581,31 +684,30 @@ class MultiAgentAI {
         const ranked = this.agents.map((a, i) => ({ agent: a, idx: i, avg: a.avgScore })).sort((a, b) => b.avg - a.avg);
         console.log(`📊 Gen ${this.generation}:`, ranked.slice(0, 5).map(r => r.avg).join(', '));
 
-        const elite = Math.max(1, Math.floor(this.agents.length * 0.2)); // 上位20%
-        const survivors = Math.max(2, Math.ceil(this.agents.length * 0.5)); // 上位50%
+        const elite = Math.max(1, Math.floor(this.agents.length * 0.2));
+        const survivors = Math.max(2, Math.ceil(this.agents.length * 0.5));
 
         for (let i = elite; i < this.agents.length; i++) {
             const target = this.agents[ranked[i].idx];
             
             if (i < survivors) {
-                // 上位50%: 軽い変異のみ
-                target.mutate(0.2, 0.15);
+                target.mutate(0.2, 0.12);
             } else {
-                // 下位50%: 上位からコピー+変異
                 const parentIdx = i % elite;
                 target.copyFrom(ranked[parentIdx].agent.weights);
-                target.mutate(0.5, 0.3);
+                target.mutate(0.4, 0.25);
             }
             target.gamesPlayed = 0;
             target.totalScore = 0;
         }
 
-        // ベストの遺伝子を全体に少し注入
-        if (this.bestWeights) {
+        // ベスト（グローバル優先）の遺伝子を注入
+        const bestW = this.globalBestWeights || this.bestWeights;
+        if (bestW) {
             this.agents.forEach((a, i) => {
                 if (i >= elite) {
                     for (const k in a.weights) {
-                        if (Math.random() < 0.15) a.weights[k] = this.bestWeights[k];
+                        if (Math.random() < 0.12) a.weights[k] = bestW[k];
                     }
                 }
             });
