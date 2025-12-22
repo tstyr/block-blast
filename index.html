@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Block Blast - マルチAI学習版</title>
+    <title>Block Blast - AI学習</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
@@ -13,46 +13,52 @@
     <div class="container">
         <h1>Block Blast AI</h1>
         
-        <div class="cloud-sync">
-            <button id="loginBtn">Googleログイン</button>
-            <span id="loginStatus">未ログイン</span>
-        </div>
-
-        <div class="global-stats">
-            <span>世代: <span id="generation">1</span></span>
-            <span>総ゲーム: <span id="totalGames">0</span></span>
-            <span>最高: <span id="bestScore">0</span></span>
-            <span>平均: <span id="avgScore">0</span></span>
-            <span>成長: <span id="growth">-</span></span>
-        </div>
-
-        <div class="controls">
-            <button id="toggleAI">AI開始</button>
-            <div class="ai-info">
-                <label>速度: <input type="range" id="aiSpeed" min="5" max="200" value="50"></label>
-                <span id="speedValue">50ms</span>
+        <div class="top-bar">
+            <div class="cloud-sync">
+                <button id="loginBtn">Googleログイン</button>
+                <span id="loginStatus">未ログイン</span>
             </div>
-            <div class="ai-info">
+            <div class="controls">
+                <button id="toggleAI">AI開始</button>
+                <label>速度: <input type="range" id="aiSpeed" min="1" max="200" value="30"><span id="speedValue">30ms</span></label>
                 <label>AI数: 
                     <select id="agentCount">
                         <option value="2">2</option>
-                        <option value="4" selected>4</option>
-                        <option value="6">6</option>
-                        <option value="8">8</option>
-                        <option value="10">10</option>
+                        <option value="4">4</option>
+                        <option value="6" selected>6</option>
+                        <option value="9">9</option>
                         <option value="12">12</option>
                         <option value="16">16</option>
+                        <option value="20">20</option>
+                        <option value="25">25</option>
+                        <option value="30">30</option>
+                        <option value="50">50</option>
                     </select>
                 </label>
             </div>
         </div>
 
-        <div id="gamesContainer" class="games-container"></div>
-
-        <div class="instructions">
-            <p>各AIが独立してプレイ。ゲームオーバーになったら即リスタート。</p>
-            <p>高スコアのAIの戦略が次世代に引き継がれ、成長していきます。</p>
+        <div class="stats-bar">
+            <span>世代: <b id="generation">1</b></span>
+            <span>総ゲーム: <b id="totalGames">0</b></span>
+            <span>最高: <b id="bestScore">0</b></span>
+            <span>平均: <b id="avgScore">0</b></span>
+            <span>成長: <b id="growth">-</b></span>
         </div>
+
+        <div class="graph-section">
+            <div class="graph-header">
+                <span>スコア推移</span>
+                <div class="graph-buttons">
+                    <button id="graphRecent" class="graph-btn active">直近100</button>
+                    <button id="graphAll" class="graph-btn">全期間</button>
+                    <button id="graphDaily" class="graph-btn">日別</button>
+                </div>
+            </div>
+            <canvas id="graphCanvas" width="700" height="180"></canvas>
+        </div>
+
+        <div id="gamesContainer" class="games-container"></div>
     </div>
 
     <script src="game.js"></script>
