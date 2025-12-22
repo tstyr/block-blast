@@ -1,6 +1,6 @@
 // Block Blast Game
 const BOARD_SIZE = 8;
-const CELL_SIZE = 40;
+const CELL_SIZE = 30;
 const COLORS = [
     '#ff6b6b', '#feca57', '#48dbfb', '#ff9ff3',
     '#54a0ff', '#5f27cd', '#00d2d3', '#1dd1a1'
@@ -29,26 +29,44 @@ const PIECE_SHAPES = [
 ];
 
 class BlockBlastGame {
-    constructor() {
-        this.canvas = document.getElementById('gameBoard');
-        this.ctx = this.canvas.getContext('2d');
+    constructor(container, id, isManual = false) {
+        this.id = id;
+        this.isManual = isManual;
+        this.container = container;
+        
+        this.createDOM();
         this.board = [];
         this.pieces = [];
         this.selectedPiece = null;
         this.score = 0;
-        this.highScore = parseInt(localStorage.getItem('blockBlastHighScore')) || 0;
         this.gameOver = false;
-        
-        // ドラッグ状態
         this.dragging = false;
         this.dragPieceIndex = null;
-        this.dragX = 0;
-        this.dragY = 0;
         this.hoverX = -1;
         this.hoverY = -1;
         
         this.init();
-        this.setupEventListeners();
+        if (isManual) this.setupEventListeners();
+    }
+
+    createDOM() {
+        const div = document.createElement('div');
+        div.className = 'game-instance';
+        div.innerHTML = `
+            <div class="header">
+                <span class="agent-name">${this.isManual ? 'あなた' : 'AI ' + (this.id + 1)}</span>
+                <span class="score-display">Score: <span class="score">0</span></span>
+            </div>
+            <canvas width="${BOARD_SIZE * CELL_SIZE}" height="${BOARD_SIZE * CELL_SIZE}"></canvas>
+            <div class="pieces-row"></div>
+        `;
+        this.container.appendChild(div);
+        
+        this.element = div;
+        this.canvas = div.querySelector('canvas');
+        this.ctx = this.canvas.getContext('2d');
+        this.piecesContainer = div.querySelector('.pieces-row');
+        this.scoreElement = div.querySelector('.score');
     }
 
     init() {
@@ -57,8 +75,10 @@ class BlockBlastGame {
         this.gameOver = false;
         this.selectedPiece = null;
         this.dragging = false;
+        this.hoverX = -1;
+        this.hoverY = -1;
         this.generatePieces();
-        this.updateDisplay();
+        this.updateScore();
         this.render();
     }
 
@@ -77,55 +97,47 @@ class BlockBlastGame {
     }
 
     renderPieces() {
-        const container = document.getElementById('piecesContainer');
-        container.innerHTML = '';
-        const pieceBlockSize = 25;
-        const canvasSize = 120;
+        this.piecesContainer.innerHTML = '';
+        const blockSize = 18;
 
         this.pieces.forEach((piece, index) => {
             if (piece.used) return;
 
             const canvas = document.createElement('canvas');
             canvas.className = 'piece-canvas';
-            canvas.width = canvasSize;
-            canvas.height = canvasSize;
+            canvas.width = piece.shape[0].length * blockSize + 6;
+            canvas.height = piece.shape.length * blockSize + 6;
             canvas.dataset.index = index;
 
             const ctx = canvas.getContext('2d');
-            const offsetX = (canvasSize - piece.shape[0].length * pieceBlockSize) / 2;
-            const offsetY = (canvasSize - piece.shape.length * pieceBlockSize) / 2;
-
             piece.shape.forEach((row, y) => {
                 row.forEach((cell, x) => {
                     if (cell) {
                         ctx.fillStyle = piece.color;
-                        ctx.fillRect(offsetX + x * pieceBlockSize, offsetY + y * pieceBlockSize, pieceBlockSize - 2, pieceBlockSize - 2);
-                        ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                        ctx.fillRect(offsetX + x * pieceBlockSize, offsetY + y * pieceBlockSize, pieceBlockSize - 2, 4);
+                        ctx.fillRect(x * blockSize + 3, y * blockSize + 3, blockSize - 2, blockSize - 2);
                     }
                 });
             });
 
-            // マウスダウンでドラッグ開始
-            canvas.addEventListener('mousedown', (e) => {
-                if (this.gameOver) return;
-                this.startDrag(index, e.clientX, e.clientY);
-            });
+            if (this.isManual) {
+                canvas.addEventListener('mousedown', (e) => {
+                    if (this.gameOver) return;
+                    this.startDrag(index);
+                });
+            }
 
-            container.appendChild(canvas);
+            this.piecesContainer.appendChild(canvas);
         });
     }
 
-    startDrag(pieceIndex, clientX, clientY) {
+    startDrag(pieceIndex) {
         if (this.pieces[pieceIndex].used) return;
         this.dragging = true;
         this.dragPieceIndex = pieceIndex;
-        this.dragX = clientX;
-        this.dragY = clientY;
         this.selectedPiece = pieceIndex;
         document.body.style.cursor = 'grabbing';
         
-        document.querySelectorAll('.piece-canvas').forEach((c) => {
+        this.piecesContainer.querySelectorAll('.piece-canvas').forEach((c) => {
             c.classList.toggle('selected', parseInt(c.dataset.index) === pieceIndex);
         });
     }
@@ -149,10 +161,9 @@ class BlockBlastGame {
         const piece = this.pieces[pieceIndex];
         if (!this.canPlace(piece, boardX, boardY)) return false;
 
-        const shape = piece.shape;
-        for (let y = 0; y < shape.length; y++) {
-            for (let x = 0; x < shape[y].length; x++) {
-                if (shape[y][x]) {
+        for (let y = 0; y < piece.shape.length; y++) {
+            for (let x = 0; x < piece.shape[y].length; x++) {
+                if (piece.shape[y][x]) {
                     this.board[boardY + y][boardX + x] = piece.color;
                 }
             }
@@ -164,7 +175,7 @@ class BlockBlastGame {
         this.hoverX = -1;
         this.hoverY = -1;
 
-        let blockCount = shape.flat().filter(c => c).length;
+        const blockCount = piece.shape.flat().filter(c => c).length;
         this.score += blockCount;
 
         this.clearLines();
@@ -177,13 +188,9 @@ class BlockBlastGame {
 
         if (this.checkGameOver()) {
             this.gameOver = true;
-            if (this.score > this.highScore) {
-                this.highScore = this.score;
-                localStorage.setItem('blockBlastHighScore', this.highScore);
-            }
         }
 
-        this.updateDisplay();
+        this.updateScore();
         this.render();
         return true;
     }
@@ -228,42 +235,41 @@ class BlockBlastGame {
         return true;
     }
 
-    updateDisplay() {
-        document.getElementById('score').textContent = this.score;
-        document.getElementById('highScore').textContent = this.highScore;
+    updateScore() {
+        this.scoreElement.textContent = this.score;
     }
 
     render() {
-        this.ctx.fillStyle = '#0f0f23';
-        this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+        const ctx = this.ctx;
+        ctx.fillStyle = '#0f0f23';
+        ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
 
         // グリッド
-        this.ctx.strokeStyle = '#1a1a3e';
+        ctx.strokeStyle = '#1a1a3e';
+        ctx.lineWidth = 1;
         for (let i = 0; i <= BOARD_SIZE; i++) {
-            this.ctx.beginPath();
-            this.ctx.moveTo(i * CELL_SIZE, 0);
-            this.ctx.lineTo(i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
-            this.ctx.stroke();
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, i * CELL_SIZE);
-            this.ctx.lineTo(BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
-            this.ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(i * CELL_SIZE, 0);
+            ctx.lineTo(i * CELL_SIZE, BOARD_SIZE * CELL_SIZE);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(0, i * CELL_SIZE);
+            ctx.lineTo(BOARD_SIZE * CELL_SIZE, i * CELL_SIZE);
+            ctx.stroke();
         }
 
         // 配置済みブロック
         for (let y = 0; y < BOARD_SIZE; y++) {
             for (let x = 0; x < BOARD_SIZE; x++) {
                 if (this.board[y][x]) {
-                    this.ctx.fillStyle = this.board[y][x];
-                    this.ctx.fillRect(x * CELL_SIZE + 2, y * CELL_SIZE + 2, CELL_SIZE - 4, CELL_SIZE - 4);
-                    this.ctx.fillStyle = 'rgba(255,255,255,0.3)';
-                    this.ctx.fillRect(x * CELL_SIZE + 2, y * CELL_SIZE + 2, CELL_SIZE - 4, 4);
+                    ctx.fillStyle = this.board[y][x];
+                    ctx.fillRect(x * CELL_SIZE + 1, y * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
                 }
             }
         }
 
-        // プレビュー表示（ドラッグ中）
-        if (this.dragging && this.dragPieceIndex !== null && this.hoverX >= 0 && this.hoverY >= 0) {
+        // プレビュー
+        if (this.dragging && this.dragPieceIndex !== null && this.hoverX >= 0) {
             const piece = this.pieces[this.dragPieceIndex];
             const canPlace = this.canPlace(piece, this.hoverX, this.hoverY);
             
@@ -273,13 +279,8 @@ class BlockBlastGame {
                         const bx = this.hoverX + px;
                         const by = this.hoverY + py;
                         if (bx >= 0 && bx < BOARD_SIZE && by >= 0 && by < BOARD_SIZE) {
-                            this.ctx.fillStyle = canPlace ? piece.color + '80' : '#ff000050';
-                            this.ctx.fillRect(bx * CELL_SIZE + 2, by * CELL_SIZE + 2, CELL_SIZE - 4, CELL_SIZE - 4);
-                            if (canPlace) {
-                                this.ctx.strokeStyle = piece.color;
-                                this.ctx.lineWidth = 2;
-                                this.ctx.strokeRect(bx * CELL_SIZE + 2, by * CELL_SIZE + 2, CELL_SIZE - 4, CELL_SIZE - 4);
-                            }
+                            ctx.fillStyle = canPlace ? piece.color + '80' : '#ff000060';
+                            ctx.fillRect(bx * CELL_SIZE + 1, by * CELL_SIZE + 1, CELL_SIZE - 2, CELL_SIZE - 2);
                         }
                     }
                 });
@@ -288,31 +289,25 @@ class BlockBlastGame {
 
         // ゲームオーバー
         if (this.gameOver) {
-            this.ctx.fillStyle = 'rgba(0,0,0,0.7)';
-            this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-            this.ctx.fillStyle = '#ff6b6b';
-            this.ctx.font = 'bold 24px sans-serif';
-            this.ctx.textAlign = 'center';
-            this.ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2);
+            ctx.fillStyle = 'rgba(0,0,0,0.7)';
+            ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            ctx.fillStyle = '#ff6b6b';
+            ctx.font = 'bold 18px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('GAME OVER', this.canvas.width / 2, this.canvas.height / 2);
         }
     }
 
     getBoardCoords(clientX, clientY) {
         const rect = this.canvas.getBoundingClientRect();
-        const scaleX = this.canvas.width / rect.width;
-        const scaleY = this.canvas.height / rect.height;
-        const x = Math.floor((clientX - rect.left) * scaleX / CELL_SIZE);
-        const y = Math.floor((clientY - rect.top) * scaleY / CELL_SIZE);
+        const x = Math.floor((clientX - rect.left) / CELL_SIZE);
+        const y = Math.floor((clientY - rect.top) / CELL_SIZE);
         return { x, y };
     }
 
     setupEventListeners() {
-        // マウス移動（ドラッグ中のプレビュー更新）
         document.addEventListener('mousemove', (e) => {
             if (!this.dragging || this.dragPieceIndex === null) return;
-            
-            this.dragX = e.clientX;
-            this.dragY = e.clientY;
             
             const rect = this.canvas.getBoundingClientRect();
             if (e.clientX >= rect.left && e.clientX <= rect.right &&
@@ -327,7 +322,6 @@ class BlockBlastGame {
             this.render();
         });
 
-        // マウスアップ（ドロップ）
         document.addEventListener('mouseup', (e) => {
             if (!this.dragging || this.dragPieceIndex === null) return;
             
@@ -346,14 +340,6 @@ class BlockBlastGame {
             this.hoverY = -1;
             this.render();
         });
-
-        document.getElementById('newGame').addEventListener('click', () => this.init());
-    }
-
-    // AI用
-    selectPiece(index) {
-        if (this.pieces[index].used) return;
-        this.selectedPiece = index;
     }
 
     getValidMoves() {
@@ -368,6 +354,8 @@ class BlockBlastGame {
         });
         return moves;
     }
-}
 
-const game = new BlockBlastGame();
+    destroy() {
+        this.element.remove();
+    }
+}

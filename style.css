@@ -9,18 +9,19 @@ body {
     background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
     min-height: 100vh;
     color: #fff;
+    overflow-x: hidden;
 }
 
 .container {
-    max-width: 800px;
+    max-width: 1400px;
     margin: 0 auto;
-    padding: 20px;
+    padding: 15px;
 }
 
 h1 {
     text-align: center;
-    font-size: 2.5rem;
-    margin-bottom: 20px;
+    font-size: 2rem;
+    margin-bottom: 15px;
     background: linear-gradient(45deg, #ff6b6b, #feca57, #48dbfb);
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
@@ -32,7 +33,7 @@ h1 {
     justify-content: center;
     align-items: center;
     gap: 15px;
-    margin-bottom: 15px;
+    margin-bottom: 10px;
 }
 
 #loginBtn {
@@ -40,6 +41,9 @@ h1 {
     color: white;
     padding: 8px 16px;
     font-size: 0.9rem;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
 }
 
 #loginStatus {
@@ -47,18 +51,16 @@ h1 {
     color: #aaa;
 }
 
-.game-info {
+.global-stats {
     display: flex;
     justify-content: center;
-    gap: 40px;
-    margin-bottom: 20px;
-    font-size: 1.2rem;
-}
-
-.score, .high-score {
+    flex-wrap: wrap;
+    gap: 20px;
+    margin-bottom: 15px;
     background: rgba(255,255,255,0.1);
-    padding: 10px 20px;
+    padding: 12px 20px;
     border-radius: 10px;
+    font-size: 1rem;
 }
 
 .controls {
@@ -71,17 +73,16 @@ h1 {
 }
 
 button {
-    padding: 12px 24px;
+    padding: 10px 20px;
     font-size: 1rem;
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    transition: all 0.3s;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
-#newGame {
-    background: linear-gradient(45deg, #667eea, #764ba2);
-    color: white;
+button:hover {
+    transform: scale(1.02);
 }
 
 #toggleAI {
@@ -93,19 +94,15 @@ button {
     background: linear-gradient(45deg, #eb3349, #f45c43);
 }
 
-button:hover {
-    transform: scale(1.05);
-    box-shadow: 0 5px 20px rgba(0,0,0,0.3);
-}
-
 .ai-info {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
+    color: #ccc;
 }
 
 .ai-info input[type="range"] {
-    width: 100px;
+    width: 80px;
 }
 
 .ai-info select {
@@ -116,82 +113,79 @@ button:hover {
     border-radius: 5px;
 }
 
-.ai-stats {
+.games-container {
     display: flex;
-    justify-content: center;
     flex-wrap: wrap;
-    gap: 15px;
-    font-size: 0.9rem;
-    color: #aaa;
+    justify-content: center;
+    gap: 20px;
     margin-bottom: 20px;
-    background: rgba(255,255,255,0.05);
-    padding: 10px 20px;
+}
+
+.game-instance {
+    background: rgba(0,0,0,0.3);
+    border-radius: 12px;
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 280px;
+}
+
+.game-instance .header {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    margin-bottom: 10px;
+    font-size: 0.9rem;
+}
+
+.game-instance .agent-name {
+    color: #48dbfb;
+    font-weight: bold;
+}
+
+.game-instance .score-display {
+    color: #feca57;
+}
+
+.game-instance canvas {
+    background: #0f0f23;
     border-radius: 8px;
 }
 
-.game-area {
+.game-instance .pieces-row {
     display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 30px;
-    margin-bottom: 20px;
-}
-
-#gameBoard {
-    width: 320px;
-    height: 320px;
-    background: #0f0f23;
-    border-radius: 10px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
-}
-
-.pieces-area {
-    text-align: center;
-}
-
-.pieces-area h3 {
-    margin-bottom: 15px;
-    color: #aaa;
-}
-
-#piecesContainer {
-    display: flex;
-    flex-direction: column;
-    gap: 15px;
+    gap: 8px;
+    margin-top: 10px;
+    min-height: 70px;
+    align-items: center;
 }
 
 .piece-canvas {
-    width: 120px;
-    height: 120px;
     background: rgba(255,255,255,0.05);
-    border-radius: 8px;
+    border-radius: 6px;
     cursor: pointer;
-    transition: box-shadow 0.2s, background 0.2s;
-}
-
-.piece-canvas:hover {
-    background: rgba(255,255,255,0.1);
 }
 
 .piece-canvas.selected {
-    box-shadow: 0 0 15px #48dbfb;
+    box-shadow: 0 0 10px #48dbfb;
     background: rgba(72, 219, 251, 0.2);
 }
 
 .instructions {
     background: rgba(255,255,255,0.05);
-    padding: 20px;
+    padding: 15px;
     border-radius: 10px;
     text-align: center;
 }
 
 .instructions h3 {
-    margin-bottom: 10px;
+    margin-bottom: 8px;
     color: #feca57;
 }
 
 .instructions p {
-    margin: 5px 0;
+    margin: 4px 0;
     color: #aaa;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
 }

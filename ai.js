@@ -1,11 +1,8 @@
-// Block Blast AI - 複数エージェント強化学習 + Firebase同期
-
-// Firebase設定（あなたのプロジェクトに置き換えてください）
+// Firebase設定
 const FIREBASE_CONFIG = {
     apiKey: "YOUR_API_KEY",
     authDomain: "YOUR_PROJECT.firebaseapp.com",
     projectId: "YOUR_PROJECT",
-    storageBucket: "YOUR_PROJECT.appspot.com",
     databaseURL: "https://YOUR_PROJECT-default-rtdb.firebaseio.com"
 };
 
@@ -22,20 +19,16 @@ class CloudSync {
             if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
             this.db = firebase.database();
             this.initialized = true;
-            
             firebase.auth().onAuthStateChanged(user => {
                 this.user = user;
-                this.updateLoginUI();
-                if (user) this.loadFromCloud();
+                this.updateUI();
+                if (user && window.multiAI) multiAI.loadFromCloud();
             });
             return true;
-        } catch (e) {
-            console.log('Firebase not configured');
-            return false;
-        }
+        } catch (e) { return false; }
     }
 
-    updateLoginUI() {
+    updateUI() {
         const btn = document.getElementById('loginBtn');
         const status = document.getElementById('loginStatus');
         if (this.user) {
@@ -50,7 +43,7 @@ class CloudSync {
     }
 
     async login() {
-        if (!this.initialized) { alert('Firebase未設定'); return; }
+        if (!this.initialized) return;
         if (this.user) {
             await firebase.auth().signOut();
         } else {
@@ -59,35 +52,27 @@ class CloudSync {
         }
     }
 
-    async saveToCloud(data) {
+    async save(data) {
         if (!this.user || !this.db) return;
-        try {
-            await this.db.ref(`users/${this.user.uid}/aiData`).set(data);
-            console.log('☁️ Saved to cloud');
-        } catch (e) { console.error(e); }
+        await this.db.ref(`users/${this.user.uid}/aiData`).set(data);
     }
 
-    async loadFromCloud() {
+    async load() {
         if (!this.user || !this.db) return null;
-        try {
-            const snapshot = await this.db.ref(`users/${this.user.uid}/aiData`).once('value');
-            const data = snapshot.val();
-            if (data) console.log('☁️ Loaded from cloud');
-            return data;
-        } catch (e) { console.error(e); return null; }
+        const snapshot = await this.db.ref(`users/${this.user.uid}/aiData`).once('value');
+        return snapshot.val();
     }
 }
 
 const cloudSync = new CloudSync();
 
-// 単一AIエージェント
+// AIエージェント
 class AIAgent {
-    constructor(id) {
+    constructor(id, game) {
         this.id = id;
+        this.game = game;
         this.weights = this.randomWeights();
-        this.score = 0;
         this.totalReward = 0;
-        this.gamesPlayed = 0;
     }
 
     randomWeights() {
@@ -97,19 +82,18 @@ class AIAgent {
             almostComplete: 5 + Math.random() * 10,
             holes: -1 - Math.random() * 5,
             edgeBonus: Math.random() * 2,
-            compactness: Math.random() * 3,
             bigPieceFirst: Math.random() * 3
         };
     }
 
     clone() {
-        const agent = new AIAgent(this.id);
+        const agent = new AIAgent(this.id, this.game);
         agent.weights = { ...this.weights };
         agent.totalReward = this.totalReward;
         return agent;
     }
 
-    mutate(rate = 0.3, amount = 0.2) {
+    mutate(rate = 0.4, amount = 0.3) {
         for (const key in this.weights) {
             if (Math.random() < rate) {
                 this.weights[key] += (Math.random() - 0.5) * 2 * amount * Math.abs(this.weights[key] || 1);
@@ -159,148 +143,9 @@ class AIAgent {
         for (let i = 0; i < BOARD_SIZE; i++) {
             if (board[i][0] !== 0) score += this.weights.edgeBonus;
             if (board[i][BOARD_SIZE - 1] !== 0) score += this.weights.edgeBonus;
-            if (board[0][i] !== 0) score += this.weights.edgeBonus;
-            if (board[BOARD_SIZE - 1][i] !== 0) score += this.weights.edgeBonus;
         }
 
         return score;
-    }
-}
-
-// 複数エージェント管理
-class MultiAgentAI {
-    constructor(game) {
-        this.game = game;
-        this.isRunning = false;
-        this.speed = 50;
-        this.agentCount = 5;
-        this.agents = [];
-        this.currentAgent = null;
-        this.generation = 1;
-        this.totalGames = 0;
-        this.bestScore = 0;
-        this.bestAgent = null;
-        this.recentScores = [];
-
-        this.initAgents();
-        this.loadData();
-        this.setupUI();
-        this.updateStats();
-    }
-
-    initAgents() {
-        this.agents = [];
-        for (let i = 0; i < this.agentCount; i++) {
-            this.agents.push(new AIAgent(i));
-        }
-        this.currentAgent = this.agents[0];
-    }
-
-    loadData() {
-        const saved = localStorage.getItem('blockBlastMultiAI');
-        if (saved) {
-            const data = JSON.parse(saved);
-            this.generation = data.generation || 1;
-            this.totalGames = data.totalGames || 0;
-            this.bestScore = data.bestScore || 0;
-            this.recentScores = data.recentScores || [];
-            
-            if (data.agents) {
-                this.agents = data.agents.map((a, i) => {
-                    const agent = new AIAgent(i);
-                    agent.weights = a.weights;
-                    agent.totalReward = a.totalReward || 0;
-                    return agent;
-                });
-            }
-            if (data.bestAgent) {
-                this.bestAgent = new AIAgent(-1);
-                this.bestAgent.weights = data.bestAgent.weights;
-                this.bestAgent.totalReward = data.bestAgent.totalReward || 0;
-            }
-            this.currentAgent = this.agents[0];
-        }
-    }
-
-    saveData() {
-        const data = {
-            generation: this.generation,
-            totalGames: this.totalGames,
-            bestScore: this.bestScore,
-            recentScores: this.recentScores.slice(-100),
-            agents: this.agents.map(a => ({ weights: a.weights, totalReward: a.totalReward })),
-            bestAgent: this.bestAgent ? { weights: this.bestAgent.weights, totalReward: this.bestAgent.totalReward } : null
-        };
-        localStorage.setItem('blockBlastMultiAI', JSON.stringify(data));
-        
-        // クラウド同期
-        if (cloudSync.user) cloudSync.saveToCloud(data);
-    }
-
-    async loadFromCloud() {
-        const data = await cloudSync.loadFromCloud();
-        if (data && data.generation > this.generation) {
-            this.generation = data.generation;
-            this.totalGames = data.totalGames;
-            this.bestScore = data.bestScore;
-            this.recentScores = data.recentScores || [];
-            if (data.agents) {
-                this.agents = data.agents.map((a, i) => {
-                    const agent = new AIAgent(i);
-                    agent.weights = a.weights;
-                    agent.totalReward = a.totalReward || 0;
-                    return agent;
-                });
-            }
-            if (data.bestAgent) {
-                this.bestAgent = new AIAgent(-1);
-                this.bestAgent.weights = data.bestAgent.weights;
-            }
-            this.currentAgent = this.agents[0];
-            this.updateStats();
-            console.log('☁️ Synced from cloud!');
-        }
-    }
-
-    setupUI() {
-        document.getElementById('toggleAI').addEventListener('click', () => {
-            this.isRunning = !this.isRunning;
-            document.getElementById('toggleAI').textContent = this.isRunning ? 'AI停止' : 'AI開始';
-            document.getElementById('toggleAI').classList.toggle('active', this.isRunning);
-            if (this.isRunning) this.run();
-        });
-
-        document.getElementById('aiSpeed').addEventListener('input', (e) => {
-            this.speed = parseInt(e.target.value);
-            document.getElementById('speedValue').textContent = this.speed + 'ms';
-        });
-
-        document.getElementById('agentCount').addEventListener('change', (e) => {
-            this.agentCount = parseInt(e.target.value);
-            this.initAgents();
-            this.updateStats();
-        });
-
-        document.getElementById('loginBtn').addEventListener('click', () => cloudSync.login());
-
-        // Firebase初期化
-        cloudSync.init().then(() => {
-            if (cloudSync.user) this.loadFromCloud();
-        });
-    }
-
-    updateStats() {
-        document.getElementById('generation').textContent = this.generation;
-        document.getElementById('trainCount').textContent = this.totalGames;
-        document.getElementById('bestScoreAI').textContent = this.bestScore;
-        
-        const avg = this.recentScores.length > 0
-            ? Math.round(this.recentScores.reduce((a, b) => a + b, 0) / this.recentScores.length)
-            : 0;
-        document.getElementById('avgScore').textContent = avg;
-        
-        document.getElementById('currentAgent').textContent = 
-            this.currentAgent ? `Agent ${this.currentAgent.id + 1}` : '-';
     }
 
     simulateMove(board, piece, x, y) {
@@ -333,7 +178,7 @@ class MultiAgentAI {
         return { board: newBoard, linesCleared };
     }
 
-    findBestMove(agent) {
+    findBestMove() {
         const moves = this.game.getValidMoves();
         if (moves.length === 0) return null;
 
@@ -344,11 +189,11 @@ class MultiAgentAI {
             const piece = this.game.pieces[move.pieceIndex];
             const result = this.simulateMove(this.game.board, piece, move.x, move.y);
 
-            let moveScore = result.linesCleared * agent.weights.linesCleared;
-            moveScore += agent.evaluateBoard(result.board);
+            let moveScore = result.linesCleared * this.weights.linesCleared;
+            moveScore += this.evaluateBoard(result.board);
             
             const blockSize = piece.shape.flat().filter(c => c).length;
-            moveScore += blockSize * agent.weights.bigPieceFirst;
+            moveScore += blockSize * this.weights.bigPieceFirst;
 
             if (moveScore > bestScore) {
                 bestScore = moveScore;
@@ -358,90 +203,213 @@ class MultiAgentAI {
         return bestMove;
     }
 
-    // 報酬ベース進化
-    evolve() {
-        const score = this.game.score;
-        this.recentScores.push(score);
-        if (this.recentScores.length > 100) this.recentScores.shift();
-
-        // 報酬計算（スコアに応じてポイント付与）
-        const reward = Math.pow(score / 100, 1.5); // 高スコアほど報酬増加
-        this.currentAgent.totalReward += reward;
-        this.currentAgent.score = score;
-        this.currentAgent.gamesPlayed++;
-
-        // ベスト更新
-        if (score > this.bestScore) {
-            this.bestScore = score;
-            this.bestAgent = this.currentAgent.clone();
-            console.log(`🏆 New best: ${score} by Agent ${this.currentAgent.id + 1}`);
+    step() {
+        if (this.game.gameOver) return false;
+        const move = this.findBestMove();
+        if (move) {
+            this.game.placePiece(move.pieceIndex, move.x, move.y);
+            return true;
         }
+        return false;
+    }
+}
 
-        this.totalGames++;
+// マルチエージェント管理
+class MultiAgentAI {
+    constructor() {
+        this.container = document.getElementById('gamesContainer');
+        this.agents = [];
+        this.games = [];
+        this.agentCount = 3;
+        this.isRunning = false;
+        this.speed = 100;
+        this.generation = 1;
+        this.totalGames = 0;
+        this.bestScore = 0;
+        this.bestWeights = null;
+        this.recentScores = [];
 
-        // 世代交代（全エージェントが1ゲームずつプレイしたら）
-        const nextAgentIndex = (this.currentAgent.id + 1) % this.agents.length;
-        
-        if (nextAgentIndex === 0) {
-            this.generation++;
-            this.evolveGeneration();
-        }
-
-        this.currentAgent = this.agents[nextAgentIndex];
-        this.saveData();
+        this.loadData();
+        this.createAgents();
+        this.setupUI();
         this.updateStats();
+        cloudSync.init();
     }
 
-    evolveGeneration() {
-        // 報酬でソート
-        this.agents.sort((a, b) => b.totalReward - a.totalReward);
+    createAgents() {
+        // 既存を削除
+        this.games.forEach(g => g.destroy());
+        this.games = [];
+        this.agents = [];
 
-        console.log(`📊 Gen ${this.generation} rewards:`, this.agents.map(a => Math.round(a.totalReward)));
+        for (let i = 0; i < this.agentCount; i++) {
+            const game = new BlockBlastGame(this.container, i, false);
+            this.games.push(game);
+            
+            const agent = new AIAgent(i, game);
+            // ベストの重みがあれば継承
+            if (this.bestWeights) {
+                agent.weights = { ...this.bestWeights };
+                agent.mutate(0.5, 0.3);
+            }
+            this.agents.push(agent);
+        }
+    }
 
-        // 上位半分を残し、下位を上位のクローン+変異で置き換え
-        const survivors = Math.ceil(this.agents.length / 2);
+    loadData() {
+        const saved = localStorage.getItem('blockBlastMultiAI3');
+        if (saved) {
+            const data = JSON.parse(saved);
+            this.generation = data.generation || 1;
+            this.totalGames = data.totalGames || 0;
+            this.bestScore = data.bestScore || 0;
+            this.bestWeights = data.bestWeights || null;
+            this.recentScores = data.recentScores || [];
+        }
+    }
+
+    saveData() {
+        const data = {
+            generation: this.generation,
+            totalGames: this.totalGames,
+            bestScore: this.bestScore,
+            bestWeights: this.bestWeights,
+            recentScores: this.recentScores.slice(-100)
+        };
+        localStorage.setItem('blockBlastMultiAI3', JSON.stringify(data));
+        if (cloudSync.user) cloudSync.save(data);
+    }
+
+    async loadFromCloud() {
+        const data = await cloudSync.load();
+        if (data && data.generation > this.generation) {
+            this.generation = data.generation;
+            this.totalGames = data.totalGames;
+            this.bestScore = data.bestScore;
+            this.bestWeights = data.bestWeights;
+            this.recentScores = data.recentScores || [];
+            this.updateStats();
+            // エージェントに反映
+            this.agents.forEach(a => {
+                if (this.bestWeights) {
+                    a.weights = { ...this.bestWeights };
+                    a.mutate(0.3, 0.2);
+                }
+            });
+        }
+    }
+
+    setupUI() {
+        document.getElementById('toggleAI').addEventListener('click', () => {
+            this.isRunning = !this.isRunning;
+            document.getElementById('toggleAI').textContent = this.isRunning ? 'AI停止' : 'AI開始';
+            document.getElementById('toggleAI').classList.toggle('active', this.isRunning);
+            if (this.isRunning) this.run();
+        });
+
+        document.getElementById('aiSpeed').addEventListener('input', (e) => {
+            this.speed = parseInt(e.target.value);
+            document.getElementById('speedValue').textContent = this.speed + 'ms';
+        });
+
+        document.getElementById('agentCount').addEventListener('change', (e) => {
+            this.agentCount = parseInt(e.target.value);
+            this.createAgents();
+        });
+
+        document.getElementById('loginBtn').addEventListener('click', () => cloudSync.login());
+    }
+
+    updateStats() {
+        document.getElementById('generation').textContent = this.generation;
+        document.getElementById('totalGames').textContent = this.totalGames;
+        document.getElementById('bestScore').textContent = this.bestScore;
         
+        const avg = this.recentScores.length > 0
+            ? Math.round(this.recentScores.reduce((a, b) => a + b, 0) / this.recentScores.length)
+            : 0;
+        document.getElementById('avgScore').textContent = avg;
+    }
+
+    evolve() {
+        // 全エージェントのスコアを収集
+        const scores = this.agents.map((a, i) => ({
+            agent: a,
+            score: this.games[i].score
+        }));
+
+        // スコア記録
+        scores.forEach(s => {
+            this.recentScores.push(s.score);
+            this.totalGames++;
+            
+            // 報酬計算（高スコアほど指数的に増加）
+            const reward = Math.pow(s.score / 50, 1.5);
+            s.agent.totalReward += reward;
+
+            // ベスト更新
+            if (s.score > this.bestScore) {
+                this.bestScore = s.score;
+                this.bestWeights = { ...s.agent.weights };
+                console.log(`🏆 New best: ${s.score} by AI ${s.agent.id + 1}`);
+            }
+        });
+
+        if (this.recentScores.length > 100) {
+            this.recentScores = this.recentScores.slice(-100);
+        }
+
+        // 報酬でソート
+        scores.sort((a, b) => b.agent.totalReward - a.agent.totalReward);
+
+        // 上位半分の遺伝子を下位に継承
+        const survivors = Math.ceil(this.agents.length / 2);
         for (let i = survivors; i < this.agents.length; i++) {
-            const parent = this.agents[i % survivors];
-            this.agents[i] = parent.clone();
-            this.agents[i].id = i;
+            const parent = scores[i % survivors].agent;
+            this.agents[i].weights = { ...parent.weights };
             this.agents[i].mutate(0.5, 0.3);
             this.agents[i].totalReward = 0;
-            this.agents[i].gamesPlayed = 0;
         }
 
-        // ベストエージェントの遺伝子を少し混ぜる
-        if (this.bestAgent) {
-            for (let i = 0; i < survivors; i++) {
-                for (const key in this.agents[i].weights) {
-                    if (Math.random() < 0.2) {
-                        this.agents[i].weights[key] = this.bestAgent.weights[key];
+        // ベストの遺伝子も混ぜる
+        if (this.bestWeights) {
+            this.agents.forEach(a => {
+                for (const key in a.weights) {
+                    if (Math.random() < 0.15) {
+                        a.weights[key] = this.bestWeights[key];
                     }
                 }
-            }
+            });
         }
 
-        // 上位の報酬をリセット（次世代用）
+        // 上位の報酬を減衰
         for (let i = 0; i < survivors; i++) {
-            this.agents[i].totalReward *= 0.5; // 少し残す
+            scores[i].agent.totalReward *= 0.5;
         }
 
-        // IDを振り直し
-        this.agents.forEach((a, i) => a.id = i);
+        this.generation++;
+        this.saveData();
+        this.updateStats();
+
+        // ゲームリセット
+        this.games.forEach(g => g.init());
     }
 
     async run() {
         while (this.isRunning) {
-            if (this.game.gameOver) {
-                this.evolve();
-                await this.sleep(100);
-                this.game.init();
-                continue;
+            // 全エージェントが1手ずつ
+            let allDone = true;
+            for (let i = 0; i < this.agents.length; i++) {
+                if (!this.games[i].gameOver) {
+                    this.agents[i].step();
+                    allDone = false;
+                }
             }
 
-            const move = this.findBestMove(this.currentAgent);
-            if (move) {
-                this.game.placePiece(move.pieceIndex, move.x, move.y);
+            // 全員ゲームオーバーなら進化
+            if (allDone) {
+                this.evolve();
+                await this.sleep(300);
             }
 
             await this.sleep(this.speed);
@@ -453,4 +421,4 @@ class MultiAgentAI {
     }
 }
 
-const ai = new MultiAgentAI(game);
+const multiAI = new MultiAgentAI();
