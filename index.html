@@ -24,6 +24,12 @@
             </div>
             <div class="controls">
                 <button id="toggleAI">AI開始</button>
+                <label>モード:
+                    <select id="aiMode">
+                        <option value="genetic" selected>遺伝的AI</option>
+                        <option value="gemini">Gemini AI</option>
+                    </select>
+                </label>
                 <label>速度: <input type="range" id="aiSpeed" min="1" max="100" value="20"><span id="speedValue">20ms</span></label>
                 <label>AI数: 
                     <select id="agentCount">
@@ -44,6 +50,18 @@
                     </select>
                 </label>
             </div>
+        </div>
+
+        <div class="gemini-settings">
+            <details>
+                <summary>🤖 Gemini AI設定</summary>
+                <div class="gemini-form">
+                    <input type="password" id="geminiApiKey" placeholder="Gemini APIキーを入力">
+                    <button id="saveGeminiKey" class="small-btn">保存</button>
+                    <span class="gemini-info">リクエスト数: <b id="geminiRequests">0</b></span>
+                </div>
+                <p class="gemini-note">※ Geminiモードは1エージェントで動作し、APIレート制限があります</p>
+            </details>
         </div>
 
         <div class="stats-bar">

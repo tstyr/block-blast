@@ -221,3 +221,61 @@ h1 {
     background: rgba(255,255,255,0.05);
     border-radius: 4px;
 }
+
+
+/* Gemini AI設定 */
+.gemini-settings {
+    margin-bottom: 10px;
+}
+
+.gemini-settings details {
+    background: rgba(255,255,255,0.05);
+    border-radius: 8px;
+    padding: 8px 12px;
+}
+
+.gemini-settings summary {
+    cursor: pointer;
+    font-size: 0.9rem;
+    color: #48dbfb;
+    outline: none;
+}
+
+.gemini-form {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+}
+
+.gemini-form input {
+    background: #1a1a3e;
+    border: 1px solid #333;
+    color: white;
+    padding: 6px 10px;
+    border-radius: 4px;
+    width: 250px;
+    font-size: 0.85rem;
+}
+
+.gemini-info {
+    font-size: 0.8rem;
+    color: #aaa;
+    margin-left: 10px;
+}
+
+.gemini-note {
+    font-size: 0.75rem;
+    color: #888;
+    margin-top: 8px;
+}
+
+#aiMode {
+    background: linear-gradient(45deg, #1a1a3e, #2a2a4e);
+    color: #48dbfb;
+    border: 1px solid #48dbfb;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}

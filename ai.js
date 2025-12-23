@@ -1,3 +1,105 @@
+// Gemini AI クラス
+class GeminiAI {
+    constructor() {
+        this.apiKey = localStorage.getItem('geminiApiKey') || '';
+        this.isEnabled = false;
+        this.requestCount = 0;
+        this.lastRequestTime = 0;
+        this.minInterval = 1000; // 1秒間隔
+    }
+
+    setApiKey(key) {
+        this.apiKey = key;
+        localStorage.setItem('geminiApiKey', key);
+    }
+
+    async getMove(gameState) {
+        if (!this.apiKey || !this.isEnabled) return null;
+        
+        // レート制限
+        const now = Date.now();
+        if (now - this.lastRequestTime < this.minInterval) {
+            return null;
+        }
+        this.lastRequestTime = now;
+
+        const prompt = this.buildPrompt(gameState);
+        
+        try {
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: {
+                        temperature: 0.3,
+                        maxOutputTokens: 200
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                console.error('Gemini API error:', response.status);
+                return null;
+            }
+
+            const data = await response.json();
+            this.requestCount++;
+            
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            return this.parseResponse(text, gameState.validMoves);
+        } catch (e) {
+            console.error('Gemini request failed:', e);
+            return null;
+        }
+    }
+
+    buildPrompt(state) {
+        const boardStr = state.board.map(row => 
+            row.map(c => c ? '■' : '□').join('')
+        ).join('\n');
+
+        const piecesStr = state.pieces.map((p, i) => {
+            if (p.used) return `${i}: (使用済み)`;
+            const shape = p.shape.map(row => row.map(c => c ? '■' : ' ').join('')).join('\n');
+            return `${i}:\n${shape}`;
+        }).join('\n\n');
+
+        const movesStr = state.validMoves.slice(0, 20).map((m, i) => 
+            `${i}: ピース${m.pieceIndex} → (${m.x},${m.y})`
+        ).join('\n');
+
+        return `Block Blastパズルゲームです。8x8のボードに3つのピースを配置します。
+行または列が全て埋まると消えてスコアになります。
+
+現在のボード:
+${boardStr}
+
+利用可能なピース:
+${piecesStr}
+
+有効な配置（最大20個表示）:
+${movesStr}
+
+最も良い配置を1つ選んでください。
+回答は「選択: X」の形式で、Xは有効な配置の番号(0から)です。
+理由も簡潔に述べてください。`;
+    }
+
+    parseResponse(text, validMoves) {
+        const match = text.match(/選択[:：]\s*(\d+)/);
+        if (match) {
+            const idx = parseInt(match[1]);
+            if (idx >= 0 && idx < validMoves.length) {
+                return validMoves[idx];
+            }
+        }
+        return null;
+    }
+}
+
+const geminiAI = new GeminiAI();
+
 // Firebase設定
 const FIREBASE_CONFIG = {
     apiKey: "AIzaSyCRWWrJyQm6x9b8DkgA9jkQWgLxRENotAg",
@@ -505,6 +607,7 @@ class MultiAgentAI {
         this.bestWeights = null;
         this.globalBestScore = 0;
         this.globalBestWeights = null;
+        this.aiMode = 'genetic'; // 'genetic' or 'gemini'
         
         try {
             this.graph = new StatsGraph();
@@ -683,6 +786,41 @@ class MultiAgentAI {
             });
         }
         
+        // Gemini設定
+        const geminiKeyInput = document.getElementById('geminiApiKey');
+        const geminiSaveBtn = document.getElementById('saveGeminiKey');
+        const aiModeSelect = document.getElementById('aiMode');
+        
+        if (geminiKeyInput && geminiAI.apiKey) {
+            geminiKeyInput.value = geminiAI.apiKey;
+        }
+        
+        if (geminiSaveBtn) {
+            geminiSaveBtn.addEventListener('click', () => {
+                const key = geminiKeyInput?.value?.trim();
+                if (key) {
+                    geminiAI.setApiKey(key);
+                    alert('APIキーを保存しました');
+                }
+            });
+        }
+        
+        if (aiModeSelect) {
+            aiModeSelect.addEventListener('change', (e) => {
+                this.aiMode = e.target.value;
+                geminiAI.isEnabled = (this.aiMode === 'gemini');
+                console.log('AI Mode:', this.aiMode);
+                
+                // Geminiモードは1エージェントのみ
+                if (this.aiMode === 'gemini') {
+                    this.agentCount = 1;
+                    const agentSelect = document.getElementById('agentCount');
+                    if (agentSelect) agentSelect.value = '1';
+                    this.createAgents();
+                }
+            });
+        }
+        
         // グラフボタン
         if (graphRecent) {
             graphRecent.addEventListener('click', () => this.setGraphView('recent'));
@@ -803,11 +941,36 @@ class MultiAgentAI {
 
     async run() {
         while (this.isRunning) {
-            for (let i = 0; i < this.agents.length; i++) {
-                if (this.games[i].gameOver) this.onAgentGameOver(i);
-                else this.agents[i].step();
+            if (this.aiMode === 'gemini' && geminiAI.isEnabled && geminiAI.apiKey) {
+                // Geminiモード（1エージェントのみ）
+                const game = this.games[0];
+                if (game.gameOver) {
+                    this.onAgentGameOver(0);
+                } else {
+                    const gameState = {
+                        board: game.board,
+                        pieces: game.pieces,
+                        validMoves: game.getValidMoves()
+                    };
+                    
+                    const move = await geminiAI.getMove(gameState);
+                    if (move) {
+                        game.placePiece(move.pieceIndex, move.x, move.y);
+                        document.getElementById('geminiRequests').textContent = geminiAI.requestCount;
+                    } else {
+                        // Geminiが応答しない場合は遺伝的AIにフォールバック
+                        this.agents[0].step();
+                    }
+                }
+                await new Promise(r => setTimeout(r, Math.max(this.speed, 1000)));
+            } else {
+                // 遺伝的アルゴリズムモード
+                for (let i = 0; i < this.agents.length; i++) {
+                    if (this.games[i].gameOver) this.onAgentGameOver(i);
+                    else this.agents[i].step();
+                }
+                await new Promise(r => setTimeout(r, this.speed));
             }
-            await new Promise(r => setTimeout(r, this.speed));
         }
     }
 }
