@@ -197,54 +197,69 @@ class AIAgent {
         this.gamesPlayed = 0;
         this.totalScore = 0;
         this.bestScore = 0;
+        this.recentScores = [];  // 直近のスコアを記録
     }
 
     randomWeights() {
+        // 各重みに適切な範囲でランダム化
         return {
-            linesClear: 250,
-            multiLine: 150,
-            almostLine7: 50,
-            almostLine6: 25,
-            almostLine5: 10,
-            emptyBonus: 1.8,
-            holePenalty: -35,
-            hole4Penalty: -120,
-            edgeBonus: 4,
-            cornerBonus: 8,
-            bigPiece: 2.5,
-            futureBonus: 0.6,
-            rowColBalance: 6,
-            centerPenalty: -1.5
+            linesClear: 200 + Math.random() * 200,      // 200-400
+            multiLine: 100 + Math.random() * 150,       // 100-250
+            comboBonus: 50 + Math.random() * 100,       // 50-150 コンボ重視
+            perfectClear: 300 + Math.random() * 400,    // 300-700 全消し重視
+            almostLine7: 30 + Math.random() * 60,       // 30-90
+            almostLine6: 15 + Math.random() * 30,       // 15-45
+            emptyBonus: 1 + Math.random() * 3,          // 1-4
+            holePenalty: -20 - Math.random() * 40,      // -20 to -60
+            hole4Penalty: -80 - Math.random() * 120,    // -80 to -200
+            edgeBonus: 2 + Math.random() * 6,           // 2-8
+            cornerBonus: 5 + Math.random() * 10,        // 5-15
+            bigPiece: 1 + Math.random() * 4,            // 1-5
+            futureBonus: 0.3 + Math.random() * 1,       // 0.3-1.3
+            centerPenalty: -1 - Math.random() * 3,      // -1 to -4
+            connectBonus: 2 + Math.random() * 5,        // 2-7 連結ボーナス
         };
     }
 
-    // 最適化された初期値（学習済み）
+    // 最適化された初期値
     static getOptimizedWeights() {
         return {
-            linesClear: 280,
-            multiLine: 180,
-            almostLine7: 60,
-            almostLine6: 30,
-            almostLine5: 12,
-            emptyBonus: 2.0,
-            holePenalty: -40,
-            hole4Penalty: -150,
-            edgeBonus: 5,
-            cornerBonus: 10,
+            linesClear: 350,
+            multiLine: 200,
+            comboBonus: 120,
+            perfectClear: 600,
+            almostLine7: 70,
+            almostLine6: 35,
+            emptyBonus: 2.5,
+            holePenalty: -45,
+            hole4Penalty: -180,
+            edgeBonus: 6,
+            cornerBonus: 12,
             bigPiece: 3,
-            futureBonus: 0.8,
-            rowColBalance: 7,
-            centerPenalty: -2
+            futureBonus: 0.9,
+            centerPenalty: -2,
+            connectBonus: 5,
         };
     }
 
     get avgScore() { return this.gamesPlayed > 0 ? Math.round(this.totalScore / this.gamesPlayed) : 0; }
+    
+    // 直近10ゲームの平均（より正確な評価）
+    get recentAvg() {
+        if (this.recentScores.length === 0) return 0;
+        return Math.round(this.recentScores.reduce((a, b) => a + b, 0) / this.recentScores.length);
+    }
+    
     copyFrom(w) { this.weights = { ...w }; }
     
     mutate(rate = 0.3, amount = 0.15) {
         for (const k in this.weights) {
             if (Math.random() < rate) {
-                this.weights[k] *= (1 + (Math.random() - 0.5) * amount * 2);
+                // 符号を保持しながら変異
+                const sign = this.weights[k] >= 0 ? 1 : -1;
+                const absVal = Math.abs(this.weights[k]);
+                const newVal = absVal * (1 + (Math.random() - 0.5) * amount * 2);
+                this.weights[k] = sign * Math.max(0.1, newVal);
             }
         }
     }
@@ -285,40 +300,40 @@ class AIAgent {
                 lines++;
             }
         }
-        return { board: newBoard, lines };
+        
+        // 全消し判定
+        const isPerfect = newBoard.every(row => row.every(cell => cell === 0));
+        
+        return { board: newBoard, lines, isPerfect };
     }
 
     evaluateBoard(board) {
         let score = 0;
         const S = BOARD_SIZE;
 
+        // 空きマス数
         let empty = 0;
-        for (let y = 0; y < S; y++) for (let x = 0; x < S; x++) if (board[y][x] === 0) empty++;
+        for (let y = 0; y < S; y++) {
+            for (let x = 0; x < S; x++) {
+                if (board[y][x] === 0) empty++;
+            }
+        }
         score += this.weights.emptyBonus * empty;
 
-        let rowFills = [], colFills = [];
+        // 行・列の埋まり具合
         for (let y = 0; y < S; y++) {
             const filled = board[y].filter(c => c !== 0).length;
-            rowFills.push(filled);
             if (filled === S - 1) score += this.weights.almostLine7;
             else if (filled === S - 2) score += this.weights.almostLine6;
-            else if (filled === S - 3) score += this.weights.almostLine5;
         }
         for (let x = 0; x < S; x++) {
             let filled = 0;
             for (let y = 0; y < S; y++) if (board[y][x] !== 0) filled++;
-            colFills.push(filled);
             if (filled === S - 1) score += this.weights.almostLine7;
             else if (filled === S - 2) score += this.weights.almostLine6;
-            else if (filled === S - 3) score += this.weights.almostLine5;
         }
 
-        const rowAvg = rowFills.reduce((a, b) => a + b, 0) / S;
-        const colAvg = colFills.reduce((a, b) => a + b, 0) / S;
-        const rowVar = rowFills.reduce((a, b) => a + Math.abs(b - rowAvg), 0) / S;
-        const colVar = colFills.reduce((a, b) => a + Math.abs(b - colAvg), 0) / S;
-        score -= (rowVar + colVar) * this.weights.rowColBalance * 0.1;
-
+        // 穴ペナルティ（孤立した空きマス）
         for (let y = 0; y < S; y++) {
             for (let x = 0; x < S; x++) {
                 if (board[y][x] === 0) {
@@ -333,6 +348,7 @@ class AIAgent {
             }
         }
 
+        // 端・角ボーナス
         for (let i = 0; i < S; i++) {
             if (board[i][0] !== 0) score += this.weights.edgeBonus;
             if (board[i][S-1] !== 0) score += this.weights.edgeBonus;
@@ -344,11 +360,26 @@ class AIAgent {
         if (board[S-1][0] !== 0) score += this.weights.cornerBonus;
         if (board[S-1][S-1] !== 0) score += this.weights.cornerBonus;
 
+        // 中央ペナルティ
         const center = Math.floor(S / 2);
         for (let y = center - 1; y <= center; y++) {
             for (let x = center - 1; x <= center; x++) {
                 if (board[y][x] !== 0) score += this.weights.centerPenalty;
             }
+        }
+
+        // 連結ボーナス（同じ行/列に連続してブロックがある）
+        for (let y = 0; y < S; y++) {
+            let consecutive = 0;
+            for (let x = 0; x < S; x++) {
+                if (board[y][x] !== 0) {
+                    consecutive++;
+                } else {
+                    if (consecutive >= 3) score += this.weights.connectBonus * (consecutive - 2);
+                    consecutive = 0;
+                }
+            }
+            if (consecutive >= 3) score += this.weights.connectBonus * (consecutive - 2);
         }
 
         return score;
@@ -373,21 +404,41 @@ class AIAgent {
 
         let best = null, bestScore = -Infinity;
         const pieces = this.game.pieces;
+        const currentCombo = this.game.combo;
 
         for (const m of validMoves) {
             const piece = pieces[m.pieceIndex];
             const result = this.simulate(this.game.board, piece, m.x, m.y);
             
-            let moveScore = result.lines * this.weights.linesClear;
-            if (result.lines >= 2) moveScore += result.lines * this.weights.multiLine;
+            let moveScore = 0;
+            
+            // ライン消しボーナス
+            if (result.lines > 0) {
+                moveScore += result.lines * this.weights.linesClear;
+                if (result.lines >= 2) {
+                    moveScore += result.lines * this.weights.multiLine;
+                }
+                // コンボボーナス（現在のコンボ+1を考慮）
+                moveScore += (currentCombo + 1) * result.lines * this.weights.comboBonus;
+            }
+            
+            // 全消しボーナス
+            if (result.isPerfect) {
+                moveScore += this.weights.perfectClear;
+            }
+            
+            // ボード評価
             moveScore += this.evaluateBoard(result.board);
+            
+            // 大きいピースを早く使うボーナス
             moveScore += piece.shape.flat().filter(c => c).length * this.weights.bigPiece;
 
+            // 将来の手数
             const remaining = pieces.map((p, i) => i === m.pieceIndex ? { ...p, used: true } : p);
             const futureMoves = this.countValidMoves(result.board, remaining);
             moveScore += futureMoves * this.weights.futureBonus;
 
-            // 2手先読み
+            // 2手先読み（コンボ継続を重視）
             let bestSecond = 0;
             for (let i = 0; i < pieces.length; i++) {
                 if (i === m.pieceIndex || pieces[i].used) continue;
@@ -396,8 +447,17 @@ class AIAgent {
                     for (let x = 0; x < BOARD_SIZE; x++) {
                         if (this.canPlace(result.board, p2, x, y)) {
                             const r2 = this.simulate(result.board, p2, x, y);
-                            let s2 = r2.lines * this.weights.linesClear * 0.5;
-                            if (r2.lines >= 2) s2 += r2.lines * this.weights.multiLine * 0.5;
+                            let s2 = 0;
+                            if (r2.lines > 0) {
+                                s2 += r2.lines * this.weights.linesClear * 0.5;
+                                // 2手目でもライン消しならコンボ継続
+                                if (result.lines > 0) {
+                                    s2 += (currentCombo + 2) * r2.lines * this.weights.comboBonus * 0.5;
+                                }
+                            }
+                            if (r2.isPerfect) {
+                                s2 += this.weights.perfectClear * 0.5;
+                            }
                             s2 += this.evaluateBoard(r2.board) * 0.3;
                             if (s2 > bestSecond) bestSecond = s2;
                         }
@@ -428,6 +488,10 @@ class AIAgent {
         this.gamesPlayed++;
         this.totalScore += this.game.score;
         if (this.game.score > this.bestScore) this.bestScore = this.game.score;
+        
+        // 直近スコアを記録（最大10件）
+        this.recentScores.push(this.game.score);
+        if (this.recentScores.length > 10) this.recentScores.shift();
     }
 }
 
@@ -905,78 +969,106 @@ class MultiAgentAI {
     }
 
     evolve() {
-        const ranked = this.agents.map((a, i) => ({ agent: a, idx: i, avg: a.avgScore, best: a.bestScore }))
-            .sort((a, b) => b.avg - a.avg);
-        console.log(`📊 Gen ${this.generation}:`, ranked.slice(0, 5).map(r => `${r.avg}(${r.best})`).join(', '));
+        // 直近スコアで評価（より正確）
+        const ranked = this.agents.map((a, i) => ({ 
+            agent: a, 
+            idx: i, 
+            score: a.recentAvg || a.avgScore,
+            best: a.bestScore 
+        })).sort((a, b) => b.score - a.score);
+        
+        console.log(`📊 Gen ${this.generation}:`, ranked.slice(0, 5).map(r => `${r.score}(${r.best})`).join(', '));
 
-        // 進化が停滞しているか判定
-        const recentAvgs = this.graph.data.avgScores.slice(-30);
-        const olderAvgs = this.graph.data.avgScores.slice(-60, -30);
+        // 停滞検出
+        const recentAvgs = this.graph.data.avgScores.slice(-50);
+        const olderAvgs = this.graph.data.avgScores.slice(-100, -50);
         let isStagnant = false;
-        if (recentAvgs.length >= 20 && olderAvgs.length >= 20) {
+        if (recentAvgs.length >= 30 && olderAvgs.length >= 30) {
             const recentMean = recentAvgs.reduce((a, b) => a + b, 0) / recentAvgs.length;
             const olderMean = olderAvgs.reduce((a, b) => a + b, 0) / olderAvgs.length;
-            isStagnant = Math.abs(recentMean - olderMean) < olderMean * 0.05; // 5%未満の変化
+            const improvement = (recentMean - olderMean) / Math.max(olderMean, 1);
+            isStagnant = improvement < 0.03; // 3%未満の改善
+            if (isStagnant) {
+                console.log(`⚠️ 停滞検出 (改善率: ${(improvement * 100).toFixed(1)}%)`);
+            }
         }
 
-        const elite = Math.max(1, Math.floor(this.agents.length * 0.15)); // エリートを減らす
+        const n = this.agents.length;
+        const elite = Math.max(1, Math.floor(n * 0.15));
         
-        // 停滞時は大きく変異
-        const mutateRate = isStagnant ? 0.6 : 0.35;
-        const mutateAmount = isStagnant ? 0.4 : 0.2;
+        // 新しい重みを準備
+        const newWeights = [];
         
-        if (isStagnant) {
-            console.log('⚠️ 学習停滞検出 - 探索範囲を拡大');
+        // エリートはそのまま保持
+        for (let i = 0; i < elite; i++) {
+            newWeights.push({ ...ranked[i].agent.weights });
         }
-
-        for (let i = 0; i < this.agents.length; i++) {
-            const target = this.agents[ranked[i].idx];
+        
+        // 残りは交叉＋変異で生成
+        for (let i = elite; i < n; i++) {
+            let childWeights;
             
-            if (i < elite) {
-                // エリートは軽い変異のみ
-                target.mutate(0.1, 0.08);
-            } else if (i < this.agents.length / 2) {
-                // 中位：エリートからコピー＋変異
-                const parentIdx = Math.floor(Math.random() * elite);
-                target.copyFrom(ranked[parentIdx].agent.weights);
-                target.mutate(mutateRate, mutateAmount);
+            if (isStagnant && Math.random() < 0.4) {
+                // 停滞時：40%の確率で完全ランダム
+                const temp = new AIAgent(0, this.game);
+                childWeights = temp.randomWeights();
+            } else if (Math.random() < 0.7) {
+                // 70%：トーナメント選択＋交叉
+                const p1 = this.tournamentSelect(ranked, 3);
+                const p2 = this.tournamentSelect(ranked, 3);
+                childWeights = this.crossover(p1.weights, p2.weights);
             } else {
-                // 下位：ランダム探索 or エリートから大きく変異
-                if (Math.random() < 0.3 || isStagnant) {
-                    // 完全ランダム（新しい探索）
-                    target.weights = target.randomWeights();
-                    // ベストの一部を継承
-                    const bestW = this.globalBestWeights || this.bestWeights;
-                    if (bestW) {
-                        for (const k in target.weights) {
-                            if (Math.random() < 0.3) target.weights[k] = bestW[k];
-                        }
-                    }
-                    target.mutate(0.5, 0.3);
-                } else {
-                    const parentIdx = Math.floor(Math.random() * elite);
-                    target.copyFrom(ranked[parentIdx].agent.weights);
-                    target.mutate(0.5, 0.35);
+                // 30%：エリートからコピー
+                const parentIdx = Math.floor(Math.random() * elite);
+                childWeights = { ...ranked[parentIdx].agent.weights };
+            }
+            
+            // 変異
+            const mutateRate = isStagnant ? 0.5 : 0.3;
+            const mutateAmount = isStagnant ? 0.35 : 0.2;
+            for (const k in childWeights) {
+                if (Math.random() < mutateRate) {
+                    const sign = childWeights[k] >= 0 ? 1 : -1;
+                    const absVal = Math.abs(childWeights[k]);
+                    childWeights[k] = sign * absVal * (1 + (Math.random() - 0.5) * mutateAmount * 2);
                 }
             }
-            target.gamesPlayed = 0;
-            target.totalScore = 0;
+            
+            newWeights.push(childWeights);
         }
-
-        // クロスオーバー：上位2つの重みを混合した子を作成
-        if (this.agents.length >= 4 && ranked.length >= 2) {
-            const parent1 = ranked[0].agent.weights;
-            const parent2 = ranked[1].agent.weights;
-            const child = this.agents[ranked[this.agents.length - 1].idx];
-            for (const k in child.weights) {
-                child.weights[k] = Math.random() < 0.5 ? parent1[k] : parent2[k];
-            }
-            child.mutate(0.2, 0.15);
+        
+        // 重みを適用
+        for (let i = 0; i < n; i++) {
+            this.agents[i].weights = newWeights[i];
+            this.agents[i].gamesPlayed = 0;
+            this.agents[i].totalScore = 0;
+            this.agents[i].recentScores = [];
         }
 
         this.generation++;
         this.saveData();
         this.updateStats();
+    }
+    
+    // トーナメント選択
+    tournamentSelect(ranked, size) {
+        let best = null;
+        for (let i = 0; i < size; i++) {
+            const idx = Math.floor(Math.random() * ranked.length);
+            if (!best || ranked[idx].score > best.score) {
+                best = ranked[idx];
+            }
+        }
+        return best.agent;
+    }
+    
+    // 一様交叉
+    crossover(w1, w2) {
+        const child = {};
+        for (const k in w1) {
+            child[k] = Math.random() < 0.5 ? w1[k] : w2[k];
+        }
+        return child;
     }
 
     async run() {

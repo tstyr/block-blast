@@ -43,6 +43,7 @@ class BlockBlastGame {
         this.pieces = [];
         this.selectedPiece = null;
         this.score = 0;
+        this.combo = 0;  // コンボカウンター
         this.gameOver = false;
         this.dragging = false;
         this.dragPieceIndex = null;
@@ -76,6 +77,7 @@ class BlockBlastGame {
     init() {
         this.board = Array(BOARD_SIZE).fill(null).map(() => Array(BOARD_SIZE).fill(0));
         this.score = 0;
+        this.combo = 0;
         this.gameOver = false;
         this.selectedPiece = null;
         this.dragging = false;
@@ -224,7 +226,36 @@ class BlockBlastGame {
         });
 
         const linesCleared = rowsToClear.length + colsToClear.length;
-        if (linesCleared > 0) this.score += linesCleared * linesCleared * 10;
+        
+        if (linesCleared > 0) {
+            // コンボ継続
+            this.combo++;
+            
+            // 基本ライン消しボーナス（ライン数の2乗 × 10）
+            let lineBonus = linesCleared * linesCleared * 10;
+            
+            // コンボボーナス（コンボ数 × ライン数 × 5）
+            let comboBonus = this.combo * linesCleared * 5;
+            
+            // 全消しボーナス
+            let perfectBonus = 0;
+            const isEmpty = this.board.every(row => row.every(cell => cell === 0));
+            if (isEmpty) {
+                perfectBonus = 500;  // 全消しボーナス
+                console.log('🎉 全消し！+500');
+            }
+            
+            this.score += lineBonus + comboBonus + perfectBonus;
+            
+            if (this.combo > 1) {
+                console.log(`🔥 ${this.combo}コンボ！ +${comboBonus}`);
+            }
+        } else {
+            // ライン消しなし→コンボリセット
+            this.combo = 0;
+        }
+        
+        return linesCleared;
     }
 
     checkGameOver() {
