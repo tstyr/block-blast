@@ -898,43 +898,80 @@ class MultiAgentAI {
         }
 
         const minGames = Math.min(...this.agents.map(a => a.gamesPlayed));
-        if (minGames > 0 && minGames % 3 === 0) this.evolve();
+        if (minGames > 0 && minGames % 2 === 0) this.evolve();
 
         this.games[idx].init();
         if (this.totalGames % 15 === 0) { this.saveData(); this.updateStats(); }
     }
 
     evolve() {
-        const ranked = this.agents.map((a, i) => ({ agent: a, idx: i, avg: a.avgScore })).sort((a, b) => b.avg - a.avg);
-        console.log(`📊 Gen ${this.generation}:`, ranked.slice(0, 5).map(r => r.avg).join(', '));
+        const ranked = this.agents.map((a, i) => ({ agent: a, idx: i, avg: a.avgScore, best: a.bestScore }))
+            .sort((a, b) => b.avg - a.avg);
+        console.log(`📊 Gen ${this.generation}:`, ranked.slice(0, 5).map(r => `${r.avg}(${r.best})`).join(', '));
 
-        const elite = Math.max(1, Math.floor(this.agents.length * 0.2));
-        const survivors = Math.max(2, Math.ceil(this.agents.length * 0.5));
+        // 進化が停滞しているか判定
+        const recentAvgs = this.graph.data.avgScores.slice(-30);
+        const olderAvgs = this.graph.data.avgScores.slice(-60, -30);
+        let isStagnant = false;
+        if (recentAvgs.length >= 20 && olderAvgs.length >= 20) {
+            const recentMean = recentAvgs.reduce((a, b) => a + b, 0) / recentAvgs.length;
+            const olderMean = olderAvgs.reduce((a, b) => a + b, 0) / olderAvgs.length;
+            isStagnant = Math.abs(recentMean - olderMean) < olderMean * 0.05; // 5%未満の変化
+        }
 
-        for (let i = elite; i < this.agents.length; i++) {
+        const elite = Math.max(1, Math.floor(this.agents.length * 0.15)); // エリートを減らす
+        
+        // 停滞時は大きく変異
+        const mutateRate = isStagnant ? 0.6 : 0.35;
+        const mutateAmount = isStagnant ? 0.4 : 0.2;
+        
+        if (isStagnant) {
+            console.log('⚠️ 学習停滞検出 - 探索範囲を拡大');
+        }
+
+        for (let i = 0; i < this.agents.length; i++) {
             const target = this.agents[ranked[i].idx];
             
-            if (i < survivors) {
-                target.mutate(0.2, 0.12);
-            } else {
-                const parentIdx = i % elite;
+            if (i < elite) {
+                // エリートは軽い変異のみ
+                target.mutate(0.1, 0.08);
+            } else if (i < this.agents.length / 2) {
+                // 中位：エリートからコピー＋変異
+                const parentIdx = Math.floor(Math.random() * elite);
                 target.copyFrom(ranked[parentIdx].agent.weights);
-                target.mutate(0.4, 0.25);
+                target.mutate(mutateRate, mutateAmount);
+            } else {
+                // 下位：ランダム探索 or エリートから大きく変異
+                if (Math.random() < 0.3 || isStagnant) {
+                    // 完全ランダム（新しい探索）
+                    target.weights = target.randomWeights();
+                    // ベストの一部を継承
+                    const bestW = this.globalBestWeights || this.bestWeights;
+                    if (bestW) {
+                        for (const k in target.weights) {
+                            if (Math.random() < 0.3) target.weights[k] = bestW[k];
+                        }
+                    }
+                    target.mutate(0.5, 0.3);
+                } else {
+                    const parentIdx = Math.floor(Math.random() * elite);
+                    target.copyFrom(ranked[parentIdx].agent.weights);
+                    target.mutate(0.5, 0.35);
+                }
             }
             target.gamesPlayed = 0;
             target.totalScore = 0;
         }
 
-        // ベスト（グローバル優先）の遺伝子を注入
-        const bestW = this.globalBestWeights || this.bestWeights;
-        if (bestW) {
-            this.agents.forEach((a, i) => {
-                if (i >= elite) {
-                    for (const k in a.weights) {
-                        if (Math.random() < 0.12) a.weights[k] = bestW[k];
-                    }
-                }
-            });
+        // クロスオーバー：上位2つの重みを混合した子を作成
+        if (this.agents.length >= 4 && ranked.length >= 2) {
+            const parent1 = ranked[0].agent.weights;
+            const parent2 = ranked[1].agent.weights;
+            const child = this.agents[ranked[this.agents.length - 1].idx];
+            for (const k in child.weights) {
+                child.weights[k] = Math.random() < 0.5 ? parent1[k] : parent2[k];
+            }
+            child.mutate(0.2, 0.15);
         }
 
         this.generation++;
