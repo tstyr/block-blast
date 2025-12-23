@@ -3,9 +3,9 @@ class GeminiAI {
     constructor() {
         this.apiKey = localStorage.getItem('geminiApiKey') || '';
         this.isEnabled = false;
-        this.requestCount = 0;
+        this.requestCount = parseInt(localStorage.getItem('geminiRequestCount') || '0');
         this.lastRequestTime = 0;
-        this.minInterval = 1000; // 1秒間隔
+        this.minInterval = 200; // 200ms間隔（高速化）
     }
 
     setApiKey(key) {
@@ -13,10 +13,16 @@ class GeminiAI {
         localStorage.setItem('geminiApiKey', key);
     }
 
+    updateRequestDisplay() {
+        const el = document.getElementById('geminiRequests');
+        if (el) el.textContent = this.requestCount;
+        localStorage.setItem('geminiRequestCount', this.requestCount.toString());
+    }
+
     async getMove(gameState) {
         if (!this.apiKey || !this.isEnabled) return null;
         
-        // レート制限
+        // レート制限（短縮）
         const now = Date.now();
         if (now - this.lastRequestTime < this.minInterval) {
             return null;
@@ -26,27 +32,31 @@ class GeminiAI {
         const prompt = this.buildPrompt(gameState);
         
         try {
-            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${this.apiKey}`, {
+            // Gemini 2.0 Flash（最新・最速モデル）
+            const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${this.apiKey}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
                     generationConfig: {
-                        temperature: 0.3,
-                        maxOutputTokens: 200
+                        temperature: 0.2,
+                        maxOutputTokens: 100
                     }
                 })
             });
 
             if (!response.ok) {
-                console.error('Gemini API error:', response.status);
+                const errText = await response.text();
+                console.error('Gemini API error:', response.status, errText);
                 return null;
             }
 
             const data = await response.json();
             this.requestCount++;
+            this.updateRequestDisplay();
             
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            console.log('Gemini response:', text);
             return this.parseResponse(text, gameState.validMoves);
         } catch (e) {
             console.error('Gemini request failed:', e);
@@ -59,39 +69,32 @@ class GeminiAI {
             row.map(c => c ? '■' : '□').join('')
         ).join('\n');
 
-        const piecesStr = state.pieces.map((p, i) => {
-            if (p.used) return `${i}: (使用済み)`;
-            const shape = p.shape.map(row => row.map(c => c ? '■' : ' ').join('')).join('\n');
-            return `${i}:\n${shape}`;
-        }).join('\n\n');
+        const movesStr = state.validMoves.slice(0, 30).map((m, i) => 
+            `${i}:p${m.pieceIndex}(${m.x},${m.y})`
+        ).join(' ');
 
-        const movesStr = state.validMoves.slice(0, 20).map((m, i) => 
-            `${i}: ピース${m.pieceIndex} → (${m.x},${m.y})`
-        ).join('\n');
-
-        return `Block Blastパズルゲームです。8x8のボードに3つのピースを配置します。
-行または列が全て埋まると消えてスコアになります。
-
-現在のボード:
+        return `Block Blast 8x8。行/列が埋まると消える。
+ボード:
 ${boardStr}
 
-利用可能なピース:
-${piecesStr}
+配置候補: ${movesStr}
 
-有効な配置（最大20個表示）:
-${movesStr}
-
-最も良い配置を1つ選んでください。
-回答は「選択: X」の形式で、Xは有効な配置の番号(0から)です。
-理由も簡潔に述べてください。`;
+最良の配置番号を「選択:X」で回答。`;
     }
 
     parseResponse(text, validMoves) {
-        const match = text.match(/選択[:：]\s*(\d+)/);
-        if (match) {
-            const idx = parseInt(match[1]);
-            if (idx >= 0 && idx < validMoves.length) {
-                return validMoves[idx];
+        // 複数パターンで番号を抽出
+        const patterns = [
+            /選択[:：]\s*(\d+)/,
+            /(\d+)/
+        ];
+        for (const p of patterns) {
+            const match = text.match(p);
+            if (match) {
+                const idx = parseInt(match[1]);
+                if (idx >= 0 && idx < validMoves.length) {
+                    return validMoves[idx];
+                }
             }
         }
         return null;
@@ -956,13 +959,13 @@ class MultiAgentAI {
                     const move = await geminiAI.getMove(gameState);
                     if (move) {
                         game.placePiece(move.pieceIndex, move.x, move.y);
-                        document.getElementById('geminiRequests').textContent = geminiAI.requestCount;
                     } else {
                         // Geminiが応答しない場合は遺伝的AIにフォールバック
                         this.agents[0].step();
                     }
                 }
-                await new Promise(r => setTimeout(r, Math.max(this.speed, 1000)));
+                // Geminiモードは速度スライダーを反映（最低50ms）
+                await new Promise(r => setTimeout(r, Math.max(this.speed, 50)));
             } else {
                 // 遺伝的アルゴリズムモード
                 for (let i = 0; i < this.agents.length; i++) {
