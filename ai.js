@@ -674,7 +674,12 @@ class MultiAgentAI {
         this.bestWeights = null;
         this.globalBestScore = 0;
         this.globalBestWeights = null;
-        this.aiMode = 'genetic'; // 'genetic' or 'gemini'
+        this.aiMode = 'genetic';
+        
+        // 人間プレイ関連
+        this.humanGame = null;
+        this.humanRecords = [];  // プレイ記録 [{board, pieces, move, score, linesCleared}]
+        this.loadHumanRecords();
         
         try {
             this.graph = new StatsGraph();
@@ -698,6 +703,13 @@ class MultiAgentAI {
         }
         
         try {
+            this.setupHumanGame();
+            console.log('MultiAgentAI: Human game created');
+        } catch (e) {
+            console.error('setupHumanGame error:', e);
+        }
+        
+        try {
             this.setupUI();
             console.log('MultiAgentAI: UI setup complete');
         } catch (e) {
@@ -713,13 +725,158 @@ class MultiAgentAI {
         cloudSync.init();
         console.log('MultiAgentAI: Initialization complete!');
     }
+    
+    // 人間プレイ用ゲームをセットアップ
+    setupHumanGame() {
+        const humanContainer = document.getElementById('humanGameContainer');
+        if (!humanContainer) return;
+        
+        this.humanGame = new BlockBlastGame(humanContainer, 0, true);
+        
+        // プレイ記録用にplacePieceをフック
+        const originalPlacePiece = this.humanGame.placePiece.bind(this.humanGame);
+        this.humanGame.placePiece = (pieceIndex, x, y) => {
+            // 配置前の状態を記録
+            const boardBefore = this.humanGame.board.map(r => [...r]);
+            const piecesBefore = this.humanGame.pieces.map(p => ({...p, shape: p.shape}));
+            const scoreBefore = this.humanGame.score;
+            
+            const result = originalPlacePiece(pieceIndex, x, y);
+            
+            if (result) {
+                // 記録を保存
+                const record = {
+                    board: boardBefore,
+                    pieces: piecesBefore,
+                    move: { pieceIndex, x, y },
+                    scoreBefore,
+                    scoreAfter: this.humanGame.score,
+                    combo: this.humanGame.combo,
+                    timestamp: Date.now()
+                };
+                this.humanRecords.push(record);
+                this.saveHumanRecords();
+                this.updateHumanStats();
+            }
+            
+            return result;
+        };
+        
+        // ゲームオーバー時の処理
+        const checkInterval = setInterval(() => {
+            if (this.humanGame && this.humanGame.gameOver) {
+                console.log(`🎮 Human game over: ${this.humanGame.score}`);
+            }
+        }, 500);
+        
+        this.updateHumanStats();
+    }
+    
+    updateHumanStats() {
+        const scoreEl = document.getElementById('humanScore');
+        const comboEl = document.getElementById('humanCombo');
+        const recordEl = document.getElementById('recordCount');
+        
+        if (this.humanGame) {
+            if (scoreEl) scoreEl.textContent = this.humanGame.score;
+            if (comboEl) comboEl.textContent = this.humanGame.combo;
+        }
+        if (recordEl) recordEl.textContent = this.humanRecords.length;
+    }
+    
+    loadHumanRecords() {
+        try {
+            const saved = localStorage.getItem('blockBlast_humanRecords');
+            if (saved) {
+                this.humanRecords = JSON.parse(saved);
+            }
+        } catch (e) {
+            console.error('Error loading human records:', e);
+            this.humanRecords = [];
+        }
+    }
+    
+    saveHumanRecords() {
+        try {
+            // 最新1000件のみ保存
+            const toSave = this.humanRecords.slice(-1000);
+            localStorage.setItem('blockBlast_humanRecords', JSON.stringify(toSave));
+        } catch (e) {
+            console.error('Error saving human records:', e);
+        }
+    }
+    
+    // 人間のプレイ記録から学習
+    learnFromHumanRecords() {
+        if (this.humanRecords.length < 10) {
+            alert('記録が少なすぎます（最低10件必要）');
+            return;
+        }
+        
+        console.log(`📚 Learning from ${this.humanRecords.length} human records...`);
+        
+        // 高スコアの記録を重視して学習
+        const goodRecords = this.humanRecords
+            .filter(r => r.scoreAfter > r.scoreBefore + 5)  // スコアが上がった手
+            .sort((a, b) => (b.scoreAfter - b.scoreBefore) - (a.scoreAfter - a.scoreBefore));
+        
+        if (goodRecords.length < 5) {
+            alert('良い記録が少なすぎます。もっとプレイしてください。');
+            return;
+        }
+        
+        // 各エージェントの重みを調整
+        this.agents.forEach((agent, idx) => {
+            // ランダムに記録を選んで評価
+            let totalAdjustment = {};
+            for (const k in agent.weights) {
+                totalAdjustment[k] = 0;
+            }
+            
+            const sampleSize = Math.min(50, goodRecords.length);
+            for (let i = 0; i < sampleSize; i++) {
+                const record = goodRecords[Math.floor(Math.random() * goodRecords.length)];
+                
+                // この手がどれだけ良かったかを評価
+                const scoreGain = record.scoreAfter - record.scoreBefore;
+                const comboBonus = record.combo > 1 ? record.combo * 10 : 0;
+                const quality = scoreGain + comboBonus;
+                
+                // 重みを微調整
+                if (quality > 20) {
+                    // 良い手：関連する重みを強化
+                    totalAdjustment.linesClear += quality * 0.5;
+                    totalAdjustment.comboBonus += record.combo * 5;
+                    totalAdjustment.multiLine += quality * 0.3;
+                }
+            }
+            
+            // 調整を適用
+            for (const k in agent.weights) {
+                if (totalAdjustment[k]) {
+                    agent.weights[k] += totalAdjustment[k] / sampleSize * 0.1;
+                }
+            }
+            
+            // 少し変異も加える
+            if (idx > 0) {
+                agent.mutate(0.2, 0.1);
+            }
+        });
+        
+        this.generation++;
+        this.saveData();
+        this.updateStats();
+        
+        alert(`${goodRecords.length}件の良い記録から学習しました！`);
+        console.log('✅ Learning from human records complete');
+    }
 
     createAgents() {
         this.games.forEach(g => g.destroy());
         this.games = [];
         this.agents = [];
 
-        // 使用する重み（グローバルベスト > 自分のベスト > 最適化済み初期値）
         const baseWeights = this.globalBestWeights || this.bestWeights || AIAgent.getOptimizedWeights();
 
         for (let i = 0; i < this.agentCount; i++) {
@@ -783,7 +940,6 @@ class MultiAgentAI {
             document.getElementById('globalBestUser').textContent = global.userName || '?';
             console.log(`🌍 Global best: ${global.score} by ${global.userName}`);
             
-            // グローバルベストが自分より良ければ、エージェントに反映
             if (global.score > this.bestScore) {
                 this.agents.forEach((a, i) => {
                     if (i === 0 || Math.random() < 0.3) {
@@ -806,16 +962,18 @@ class MultiAgentAI {
         const graphDaily = document.getElementById('graphDaily');
         const graphReset = document.getElementById('graphReset');
         
+        // 人間プレイ用ボタン
+        const humanRestart = document.getElementById('humanRestart');
+        const learnFromRecords = document.getElementById('learnFromRecords');
+        const clearRecords = document.getElementById('clearRecords');
+        
         if (toggleBtn) {
             toggleBtn.addEventListener('click', () => {
-                console.log('Toggle AI clicked');
                 this.isRunning = !this.isRunning;
                 toggleBtn.textContent = this.isRunning ? 'AI停止' : 'AI開始';
                 toggleBtn.classList.toggle('active', this.isRunning);
                 if (this.isRunning) this.run();
             });
-        } else {
-            console.error('toggleAI button not found!');
         }
 
         if (speedSlider) {
@@ -833,12 +991,7 @@ class MultiAgentAI {
         }
 
         if (loginBtn) {
-            loginBtn.addEventListener('click', () => {
-                console.log('Login clicked');
-                cloudSync.login();
-            });
-        } else {
-            console.error('loginBtn not found!');
+            loginBtn.addEventListener('click', () => cloudSync.login());
         }
         
         if (useGlobalBtn) {
@@ -852,6 +1005,34 @@ class MultiAgentAI {
                 }
             });
         }
+        
+        // 人間プレイ用
+        if (humanRestart) {
+            humanRestart.addEventListener('click', () => {
+                if (this.humanGame) {
+                    this.humanGame.init();
+                    this.updateHumanStats();
+                }
+            });
+        }
+        
+        if (learnFromRecords) {
+            learnFromRecords.addEventListener('click', () => this.learnFromHumanRecords());
+        }
+        
+        if (clearRecords) {
+            clearRecords.addEventListener('click', () => {
+                if (confirm('プレイ記録をすべて削除しますか？')) {
+                    this.humanRecords = [];
+                    this.saveHumanRecords();
+                    this.updateHumanStats();
+                    alert('記録を削除しました');
+                }
+            });
+        }
+        
+        // 人間のスコア・コンボを定期更新
+        setInterval(() => this.updateHumanStats(), 200);
         
         // Gemini設定
         const geminiKeyInput = document.getElementById('geminiApiKey');
@@ -876,9 +1057,7 @@ class MultiAgentAI {
             aiModeSelect.addEventListener('change', (e) => {
                 this.aiMode = e.target.value;
                 geminiAI.isEnabled = (this.aiMode === 'gemini');
-                console.log('AI Mode:', this.aiMode);
                 
-                // Geminiモードは1エージェントのみ
                 if (this.aiMode === 'gemini') {
                     this.agentCount = 1;
                     const agentSelect = document.getElementById('agentCount');
@@ -1010,7 +1189,7 @@ class MultiAgentAI {
             
             if (isStagnant && Math.random() < 0.4) {
                 // 停滞時：40%の確率で完全ランダム
-                const temp = new AIAgent(0, this.game);
+                const temp = new AIAgent(0, this.games[0]);
                 childWeights = temp.randomWeights();
             } else if (Math.random() < 0.7) {
                 // 70%：トーナメント選択＋交叉

@@ -279,3 +279,82 @@ h1 {
     border-radius: 4px;
     font-weight: bold;
 }
+
+
+/* 人間プレイセクション */
+.human-play-section {
+    background: rgba(0,0,0,0.3);
+    border-radius: 10px;
+    padding: 10px;
+    margin-bottom: 15px;
+    border: 2px solid #48dbfb;
+}
+
+.human-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    flex-wrap: wrap;
+    gap: 10px;
+}
+
+.human-header > span {
+    font-size: 1rem;
+    color: #48dbfb;
+    font-weight: bold;
+}
+
+.human-stats {
+    display: flex;
+    gap: 15px;
+    font-size: 0.9rem;
+    color: #ccc;
+}
+
+.human-stats b {
+    color: #feca57;
+}
+
+.human-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.human-game-container {
+    display: flex;
+    justify-content: center;
+}
+
+.human-game-container .game-instance {
+    border: 2px solid #48dbfb;
+    background: rgba(72, 219, 251, 0.1);
+}
+
+.human-game-container .game-instance canvas {
+    cursor: pointer;
+}
+
+/* コンボ表示 */
+.combo-display {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 2rem;
+    font-weight: bold;
+    color: #feca57;
+    text-shadow: 0 0 20px #feca57;
+    animation: comboFade 1s ease-out forwards;
+    pointer-events: none;
+}
+
+@keyframes comboFade {
+    0% { opacity: 1; transform: translate(-50%, -50%) scale(1.5); }
+    100% { opacity: 0; transform: translate(-50%, -80%) scale(1); }
+}
+
+.small-btn.reset {
+    background: rgba(255,100,100,0.3);
+    color: #ff6b6b;
+}

@@ -85,6 +85,23 @@
             <canvas id="graphCanvas"></canvas>
         </div>
 
+        <div class="human-play-section">
+            <div class="human-header">
+                <span>🎮 あなたのプレイ</span>
+                <div class="human-stats">
+                    <span>スコア: <b id="humanScore">0</b></span>
+                    <span>コンボ: <b id="humanCombo">0</b></span>
+                    <span>記録数: <b id="recordCount">0</b></span>
+                </div>
+                <div class="human-buttons">
+                    <button id="humanRestart" class="small-btn">リスタート</button>
+                    <button id="learnFromRecords" class="small-btn">記録から学習</button>
+                    <button id="clearRecords" class="small-btn reset">記録クリア</button>
+                </div>
+            </div>
+            <div id="humanGameContainer" class="human-game-container"></div>
+        </div>
+
         <div id="gamesContainer" class="games-container"></div>
     </div>
 

@@ -57,6 +57,7 @@ class BlockBlastGame {
     createDOM() {
         const div = document.createElement('div');
         div.className = 'game-instance';
+        div.style.position = 'relative';
         div.innerHTML = `
             <div class="header">
                 <span class="agent-name">${this.isManual ? 'あなた' : 'AI ' + (this.id + 1)}</span>
@@ -72,6 +73,21 @@ class BlockBlastGame {
         this.ctx = this.canvas.getContext('2d');
         this.piecesContainer = div.querySelector('.pieces-row');
         this.scoreElement = div.querySelector('.score');
+    }
+    
+    showComboEffect(combo, isPerfect) {
+        const effect = document.createElement('div');
+        effect.className = 'combo-display';
+        if (isPerfect) {
+            effect.textContent = '🎉 PERFECT!';
+            effect.style.color = '#ff6b6b';
+        } else if (combo > 1) {
+            effect.textContent = `${combo} COMBO!`;
+        } else {
+            return;
+        }
+        this.element.appendChild(effect);
+        setTimeout(() => effect.remove(), 1000);
     }
 
     init() {
@@ -228,30 +244,24 @@ class BlockBlastGame {
         const linesCleared = rowsToClear.length + colsToClear.length;
         
         if (linesCleared > 0) {
-            // コンボ継続
             this.combo++;
             
-            // 基本ライン消しボーナス（ライン数の2乗 × 10）
             let lineBonus = linesCleared * linesCleared * 10;
-            
-            // コンボボーナス（コンボ数 × ライン数 × 5）
             let comboBonus = this.combo * linesCleared * 5;
             
-            // 全消しボーナス
             let perfectBonus = 0;
             const isEmpty = this.board.every(row => row.every(cell => cell === 0));
             if (isEmpty) {
-                perfectBonus = 500;  // 全消しボーナス
-                console.log('🎉 全消し！+500');
+                perfectBonus = 500;
             }
             
             this.score += lineBonus + comboBonus + perfectBonus;
             
-            if (this.combo > 1) {
-                console.log(`🔥 ${this.combo}コンボ！ +${comboBonus}`);
+            // コンボエフェクト表示
+            if (this.isManual) {
+                this.showComboEffect(this.combo, isEmpty);
             }
         } else {
-            // ライン消しなし→コンボリセット
             this.combo = 0;
         }
         
